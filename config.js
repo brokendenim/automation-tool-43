@@ -1,29 +1,22 @@
-const config = {
-    apiUrl: 'https://api.example.com',
-    timeout: 5000,
-    retries: 3,
+const fs = require('fs');
+const path = require('path');
+
+const DEFAULTS = {  
+    host: 'localhost',  
+    port: 3000,  
+    db: 'mongodb://localhost:27017/mydb'  
 };
 
-const getConfig = (key) => {
-    if (!key || typeof key !== 'string') {
-        throw new Error('Invalid config key provided');
+function loadConfig(configPath) {  
+    const fullPath = path.resolve(configPath);  
+    let userConfig = {};  
+    try {  
+        const configFile = fs.readFileSync(fullPath, 'utf8');  
+        userConfig = JSON.parse(configFile);  
+    } catch (err) {  
+        console.warn(`Could not load config from ${fullPath}. Using defaults.`);  
     }
-    if (!(key in config)) {
-        throw new Error('Config key does not exist');
-    }
-    return config[key];
-};
+    return { ...DEFAULTS, ...userConfig };  
+}
 
-const updateConfig = (updates) => {
-    if (typeof updates !== 'object' || updates === null) {
-        throw new Error('Updates must be an object');
-    }
-    Object.entries(updates).forEach(([key, value]) => {
-        if (!(key in config)) {
-            throw new Error(`Cannot update unknown config key: ${key}`);
-        }
-        config[key] = value;
-    });
-};
-
-module.exports = { getConfig, updateConfig };
+module.exports = { loadConfig };
