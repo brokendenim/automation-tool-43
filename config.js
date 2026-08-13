@@ -1,22 +1,37 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULTS = {  
-    host: 'localhost',  
-    port: 3000,  
-    db: 'mongodb://localhost:27017/mydb'  
-};
+const configPath = path.join(__dirname, 'config.json');
 
-function loadConfig(configPath) {  
-    const fullPath = path.resolve(configPath);  
-    let userConfig = {};  
-    try {  
-        const configFile = fs.readFileSync(fullPath, 'utf8');  
-        userConfig = JSON.parse(configFile);  
-    } catch (err) {  
-        console.warn(`Could not load config from ${fullPath}. Using defaults.`);  
+function readConfig() {
+    try {
+        const rawData = fs.readFileSync(configPath);
+        const config = JSON.parse(rawData);
+        validateConfig(config);
+        return config;
+    } catch (error) {
+        handleError(error);
     }
-    return { ...DEFAULTS, ...userConfig };  
 }
 
-module.exports = { loadConfig };
+function validateConfig(config) {
+    if (!config.database || !config.port) {
+        throw new Error('Invalid configuration: Database and port are required.');
+    }
+}
+
+function handleError(error) {
+    switch (error.code) {
+        case 'ENOENT':
+            console.error('Configuration file not found. Please ensure the file exists.');
+            break;
+        case 'EACCES':
+            console.error('Permission denied when accessing the configuration file.');
+            break;
+        default:
+            console.error(`An error occurred: ${error.message}`);
+    }
+    process.exit(1);
+}
+
+module.exports = { readConfig };
