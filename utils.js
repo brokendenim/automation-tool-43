@@ -1,37 +1,35 @@
-function generateRandomString(length) {
-    return Array.from({ length }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+function cleanData(data) {
+    if (!Array.isArray(data)) {
+        throw new TypeError('Input must be an array');
+    }
+    return data
+        .map(item => item && typeof item === 'object' ? Object.entries(item).reduce((acc, [key, value]) => {
+            if (value !== null && value !== undefined) {
+                acc[key] = typeof value === 'string' ? value.trim() : value;
+            }
+            return acc;
+        }, {}) : item)
+        .filter(item => item && Object.keys(item).length > 0);
 }
 
-function debounce(fn, delay) {
-    let timeout;
-    return function (...args) {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => fn.apply(this, args), delay);
-    };
-}
-
-function throttle(fn, limit) {
-    let lastCall;
-    let lastFunc;
-    return function (...args) {
-        const context = this;
-        const now = Date.now();
-        if (lastCall && (now - lastCall) < limit) {
-            clearTimeout(lastFunc);
-            lastFunc = setTimeout(() => {
-                lastCall = now;
-                fn.apply(context, args);
-            }, limit - (now - lastCall));
-        } else {
-            lastCall = now;
-            fn.apply(context, args);
+function mergeDeep(target, source) {
+    if (typeof target !== 'object' || target === null || typeof source !== 'object' || source === null) {
+        return target;
+    }
+    for (const key in source) {
+        if (source.hasOwnProperty(key)) {
+            if (key in target) {
+                target[key] = mergeDeep(target[key], source[key]);
+            } else {
+                target[key] = source[key];
+            }
         }
-    };
+    }
+    return target;
 }
 
-function parseQueryString(url) {
-    const queryString = url.split('?')[1];
-    return queryString ? Object.fromEntries(new URLSearchParams(queryString)) : {};
+function formatDate(date) {
+    return date instanceof Date ? date.toISOString().split('T')[0] : null;
 }
 
-module.exports = { generateRandomString, debounce, throttle, parseQueryString };
+module.exports = { cleanData, mergeDeep, formatDate };
