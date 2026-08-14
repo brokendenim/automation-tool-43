@@ -1,33 +1,20 @@
-function deepMerge(target, source) {
-    if (typeof target !== 'object' || target === null) {
-        return source;
+function validateInput(input) {
+    if (typeof input !== 'string' || input.trim() === '') {
+        throw new Error('Invalid input: must be a non-empty string.');
     }
-    for (const key in source) {
-        if (source.hasOwnProperty(key)) {
-            if (source[key] && typeof source[key] === 'object') {
-                target[key] = deepMerge(target[key] || {}, source[key]);
-            } else {
-                target[key] = source[key];
-            }
-        }
-    }
-    return target;
+    return true;
 }
 
-function getUniqueArray(array) {
-    return [...new Set(array)];
-}
-
-function safelyParseJSON(jsonString, fallback) {
+function processInput(input) {
     try {
-        return JSON.parse(jsonString);
-    } catch (err) {
-        return fallback;
+        validateInput(input);
+        console.log('Processing:', input);
+        // Simulate processing steps
+        // ...
+    } catch (error) {
+        console.error('Error:', error.message);
     }
 }
 
-module.exports = {
-    deepMerge,
-    getUniqueArray,
-    safelyParseJSON
-};
+const inputs = ['valid input', '', null, 'another valid input'];
+inputs.forEach(input => processInput(input));
