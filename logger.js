@@ -1,31 +1,41 @@
-// Simple logger utility
+const fs = require('fs');
+const path = require('path');
+const { format } = require('date-fns');
 
 class Logger {
-    constructor() {
-        this.logs = [];
+    constructor(logDir, maxSize = 5 * 1024 * 1024) {
+        this.logDir = logDir;
+        this.maxSize = maxSize;
+        this.currentLogFile = this.getLogFileName();
+        this.ensureLogDirExists();
     }
-    info(message) {
-        this._log('INFO', message);
+
+    ensureLogDirExists() {
+        if (!fs.existsSync(this.logDir)) {
+            fs.mkdirSync(this.logDir, { recursive: true });
+        }
     }
-    warn(message) {
-        this._log('WARN', message);
+
+    getLogFileName() {
+        const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
+        return path.join(this.logDir, `log_${timestamp}.txt`);
     }
-    error(message) {
-        this._log('ERROR', message);
+
+    log(message) {
+        const logMessage = `${format(new Date(), 'yyyy-MM-dd HH:mm:ss')} - ${message}\n`;
+        fs.appendFileSync(this.currentLogFile, logMessage);
+        this.rotateIfNeeded();
     }
-    _log(level, message) {
-        const timestamp = new Date().toISOString();
-        const logEntry = `${timestamp} [${level}]: ${message}`;
-        this.logs.push(logEntry);
-        console[level.toLowerCase()](logEntry);
-    }
-    getLogs() {
-        return this.logs;
-    }
-    clearLogs() {
-        this.logs = [];
+
+    rotateIfNeeded() {
+        const stats = fs.statSync(this.currentLogFile);
+        if (stats.size >= this.maxSize) {
+            this.currentLogFile = this.getLogFileName();
+        }
     }
 }
 
-const logger = new Logger();
-export default logger;
+const logger = new Logger('./logs');
+logger.log('Logger initialized.');
+
+module.exports = logger;
