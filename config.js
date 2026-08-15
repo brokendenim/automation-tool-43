@@ -1,37 +1,28 @@
 const fs = require('fs');
 const path = require('path');
 
-const configPath = path.join(__dirname, 'config.json');
+class ConfigLoader {
+    constructor(defaults) {
+        this.defaults = defaults;
+        this.config = {};
+    }
 
-function readConfig() {
-    try {
-        const rawData = fs.readFileSync(configPath);
-        const config = JSON.parse(rawData);
-        validateConfig(config);
-        return config;
-    } catch (error) {
-        handleError(error);
+    load(filePath) {
+        const fullPath = path.resolve(filePath);
+        if (fs.existsSync(fullPath)) {
+            const userConfig = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
+            this.config = { ...this.defaults, ...userConfig };
+        } else {
+            this.config = this.defaults;
+        }
+        return this.config;
     }
 }
 
-function validateConfig(config) {
-    if (!config.database || !config.port) {
-        throw new Error('Invalid configuration: Database and port are required.');
-    }
-}
+const defaultConfig = {
+    host: 'localhost',
+    port: 3000,
+    env: 'development'
+};
 
-function handleError(error) {
-    switch (error.code) {
-        case 'ENOENT':
-            console.error('Configuration file not found. Please ensure the file exists.');
-            break;
-        case 'EACCES':
-            console.error('Permission denied when accessing the configuration file.');
-            break;
-        default:
-            console.error(`An error occurred: ${error.message}`);
-    }
-    process.exit(1);
-}
-
-module.exports = { readConfig };
+module.exports = new ConfigLoader(defaultConfig);
