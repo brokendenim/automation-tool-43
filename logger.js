@@ -1,42 +1,44 @@
 const fs = require('fs');
 const path = require('path');
-const { format } = require('date-fns');
 
 class Logger {
-    constructor(logDir = 'logs', maxFiles = 5) {
+    constructor(logDir, maxSize, maxFiles) {
         this.logDir = logDir;
+        this.maxSize = maxSize;
         this.maxFiles = maxFiles;
-        this.currentLogIndex = 1;
-        this.currentLogPath = this._getLogFilePath();
-        this._ensureLogDirExists();
+        this.logFile = path.join(logDir, 'app.log');
+        this.init();
     }
 
-    _getLogFilePath() {
-        const timestamp = format(new Date(), 'yyyy-MM-dd');
-        return path.join(this.logDir, `log_${timestamp}.log`);
-    }
-
-    _ensureLogDirExists() {
+    init() {
         if (!fs.existsSync(this.logDir)) {
-            fs.mkdirSync(this.logDir);
+            fs.mkdirSync(this.logDir, { recursive: true });
         }
-    }
-
-    _rotateLogs() {
-        const files = fs.readdirSync(this.logDir);
-        const logFiles = files.filter(file => /^log_\d{4}-\d{2}-\d{2}\.log$/.test(file));
-
-        if (logFiles.length >= this.maxFiles) {
-            const oldestLog = logFiles.sort()[0];
-            fs.unlinkSync(path.join(this.logDir, oldestLog));
+        if (!fs.existsSync(this.logFile)) {
+            fs.writeFileSync(this.logFile, '');
         }
     }
 
     log(message) {
-        this._rotateLogs();
-        const logMessage = `${format(new Date(), 'HH:mm:ss')} - ${message}\n`;
-        fs.appendFileSync(this.currentLogPath, logMessage);
+        const currentSize = fs.statSync(this.logFile).size;
+        if (currentSize >= this.maxSize) {
+            this.rotateLogs();
+        }
+        fs.appendFileSync(this.logFile, `${new Date().toISOString()}: ${message}\n`);
+    }
+
+    rotateLogs() {
+        for (let i = this.maxFiles - 1; i > 0; i--) {
+            const oldFile = path.join(this.logDir, `app.log.${i}`);
+            const newFile = path.join(this.logDir, `app.log.${i + 1}`);
+            if (fs.existsSync(oldFile)) {
+                fs.renameSync(oldFile, newFile);
+            }
+        }
+        const newLogFile = path.join(this.logDir, 'app.log.1');
+        fs.renameSync(this.logFile, newLogFile);
+        fs.writeFileSync(this.logFile, '');
     }
 }
 
-module.exports = new Logger();
+module.exports = Logger;
