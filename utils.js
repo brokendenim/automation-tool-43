@@ -1,35 +1,41 @@
-function cleanData(data) {
-    if (!Array.isArray(data)) {
-        throw new TypeError('Input must be an array');
-    }
-    return data
-        .map(item => item && typeof item === 'object' ? Object.entries(item).reduce((acc, [key, value]) => {
-            if (value !== null && value !== undefined) {
-                acc[key] = typeof value === 'string' ? value.trim() : value;
-            }
-            return acc;
-        }, {}) : item)
-        .filter(item => item && Object.keys(item).length > 0);
+// @ts-check
+
+/**
+ * Generates a random integer between min (inclusive) and max (inclusive).
+ * @param {number} min - The minimum value.
+ * @param {number} max - The maximum value.
+ * @returns {number} Random integer between min and max.
+ */
+function getRandomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function mergeDeep(target, source) {
-    if (typeof target !== 'object' || target === null || typeof source !== 'object' || source === null) {
-        return target;
-    }
-    for (const key in source) {
-        if (source.hasOwnProperty(key)) {
-            if (key in target) {
-                target[key] = mergeDeep(target[key], source[key]);
-            } else {
-                target[key] = source[key];
-            }
-        }
-    }
-    return target;
-}
-
+/**
+ * Formats a date to a readable string.
+ * @param {Date} date - The date to format.
+ * @returns {string} Formatted date string.
+ */
 function formatDate(date) {
-    return date instanceof Date ? date.toISOString().split('T')[0] : null;
+    return date.toISOString().split('T')[0];
 }
 
-module.exports = { cleanData, mergeDeep, formatDate };
+/**
+ * Checks if a value is an array.
+ * @param {*} value - The value to check.
+ * @returns {boolean} True if the value is an array, false otherwise.
+ */
+function isArray(value) {
+    return Array.isArray(value);
+}
+
+/**
+ * Merges two objects, giving preference to the second object.
+ * @param {object} target - The target object.
+ * @param {object} source - The source object.
+ * @returns {object} Merged object with properties from both.
+ */
+function mergeObjects(target, source) {
+    return {...target, ...source};
+}
+
+module.exports = { getRandomInt, formatDate, isArray, mergeObjects };
