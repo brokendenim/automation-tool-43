@@ -1,30 +1,30 @@
-// Improved performance by batching requests
-const axios = require('axios');
-
-class RequestHandler {
-    constructor(urls) {
-        this.urls = urls;
-    }
-
-    async fetchDataInBatches(batchSize) {
-        const result = [];
-        for (let i = 0; i < this.urls.length; i += batchSize) {
-            const batch = this.urls.slice(i, i + batchSize);
-            const responses = await Promise.all(batch.map(url => this.makeRequest(url)));
-            result.push(...responses);
-        }
-        return result;
-    }
-
-    async makeRequest(url) {
-        try {
-            const response = await axios.get(url);
-            return response.data;
-        } catch (error) {
-            console.error(`Error fetching ${url}:`, error);
-            return null;
-        }
+class InputValidator {
+    static isValid(input) {
+        return typeof input === 'string' && input.trim() !== ''; 
     }
 }
 
-module.exports = RequestHandler;
+class Processor {
+    constructor() {
+        this.data = [];
+    }
+
+    processInput(input) {
+        if (!InputValidator.isValid(input)) {
+            console.error('Invalid input:', input);
+            return;
+        }
+        this.data.push(input);
+        console.log('Processed input:', input);
+    }
+
+    run(inputs) {
+        inputs.forEach((input) => {
+            this.processInput(input);
+        });
+    }
+}
+
+const inputs = ['valid', ' ', null, 'another valid', ''];
+const processor = new Processor();
+processor.run(inputs);
