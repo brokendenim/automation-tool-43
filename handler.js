@@ -1,30 +1,29 @@
-class InputValidator {
-    static isValid(input) {
-        return typeof input === 'string' && input.trim() !== ''; 
+function handleError(error) {
+    const errorTypes = {
+        'TypeError': 'There was a type mismatch.',
+        'ReferenceError': 'You are trying to access an unknown variable.',
+        'SyntaxError': 'There is a syntax error in the code.',
+        'RangeError': 'A value is outside the allowable range.'
+    };
+
+    const defaultMsg = 'An unknown error occurred.';
+
+    const errorMessage = errorTypes[error.name] || defaultMsg;
+    console.error(`Error: ${errorMessage} \n Details: ${error.message}`);
+    return { success: false, error: errorMessage };
+}
+
+function performAction(data) {
+    try {
+        if (!data) throw new TypeError('Data is required.');
+        if (typeof data !== 'string') throw new TypeError('Data must be a string.');
+
+        // simulate action
+        console.log(`Performing action on: ${data}`);
+        return { success: true, result: `Action performed on ${data}` };
+    } catch (error) {
+        return handleError(error);
     }
 }
 
-class Processor {
-    constructor() {
-        this.data = [];
-    }
-
-    processInput(input) {
-        if (!InputValidator.isValid(input)) {
-            console.error('Invalid input:', input);
-            return;
-        }
-        this.data.push(input);
-        console.log('Processed input:', input);
-    }
-
-    run(inputs) {
-        inputs.forEach((input) => {
-            this.processInput(input);
-        });
-    }
-}
-
-const inputs = ['valid', ' ', null, 'another valid', ''];
-const processor = new Processor();
-processor.run(inputs);
+module.exports = { performAction };
