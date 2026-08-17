@@ -1,16 +1,18 @@
-(async function fetchWithRetry(url, options = {}, retries = 3, backoff = 300) {
-    try {
-        const response = await fetch(url, options);
-        if (!response.ok) throw new Error('Network response was not ok');
-        return await response.json();
-    } catch (err) {
-        if (retries > 1) {
-            console.warn(`Retrying... Attempts left: ${retries - 1}`);
-            await new Promise(res => setTimeout(res, backoff));
-            return fetchWithRetry(url, options, retries - 1, backoff * 2);
-        } else {
-            console.error('Max retries reached.');
-            throw err;
+function isValidInput(input) { return typeof input === 'string' && input.trim() !== ''; }
+
+function processInputs(inputs) {
+    const results = [];
+    for (const input of inputs) {
+        if (!isValidInput(input)) {
+            console.error('Invalid input:', input);
+            continue;
         }
+        // Simulating processing of valid input
+        results.push(`Processed: ${input}`);
     }
-})()
+    return results;
+}
+
+const inputsToProcess = ['  hello  ', 'world', '', ' ', null, 'valid input'];
+const output = processInputs(inputsToProcess);
+console.log(output);
