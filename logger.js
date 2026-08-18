@@ -1,33 +1,33 @@
-class Logger {
-    constructor() {
-        this.logs = [];
-    }
+const fs = require('fs');
+const path = require('path');
 
-    log(message) {
-        const timestamp = new Date().toISOString();
-        this.logs.push(`[${timestamp}] ${message}`);
-    }
+const logDirectory = path.join(__dirname, 'logs');
 
-    getLogs() {
-        return this.logs.join('\n');
-    }
-
-    clearLogs() {
-        this.logs = [];
-    }
-
-    optimizeLogSize(maxSize) {
-        while (this.logs.length > maxSize) {
-            this.logs.shift();
-        }
-    }
+if (!fs.existsSync(logDirectory)) {
+    fs.mkdirSync(logDirectory);
 }
 
-const logger = new Logger();
+const getCurrentDate = () => {
+    return new Date().toISOString().replace(/:/g, '-').split('T')[0];
+};
 
-// Example usage:
-logger.log('Application started');
-logger.log('User logged in');
-logger.optimizeLogSize(5); // Retains only the last 5 logs
+const logFilePath = path.join(logDirectory, `app-${getCurrentDate()}.log`);
 
-export default logger;
+const logRotation = () => {
+    const logFiles = fs.readdirSync(logDirectory);
+    logFiles.forEach(file => {
+        const fileDate = file.split('-')[1].split('.')[0];
+        const currentDate = getCurrentDate();
+        if (fileDate !== currentDate) {
+            fs.unlinkSync(path.join(logDirectory, file));
+        }
+    });
+};
+
+const logger = (message) => {
+    logRotation();
+    const logMessage = `${new Date().toISOString()} - ${message}\n`;
+    fs.appendFileSync(logFilePath, logMessage);
+};
+
+module.exports = logger;
