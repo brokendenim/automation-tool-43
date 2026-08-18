@@ -1,24 +1,34 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_CONFIG = {
-    host: 'localhost',
-    port: 3000,
-    useHttps: false,
-    logLevel: 'info',
-};
-
-function loadConfig(customConfigPath) {
-    let finalConfig = { ...DEFAULT_CONFIG };
-    
-    if (customConfigPath && fs.existsSync(customConfigPath)) {
-        const customConfig = JSON.parse(fs.readFileSync(customConfigPath, 'utf8'));
-        finalConfig = { ...finalConfig, ...customConfig };
-    } else {
-        console.warn('Custom config not found, using defaults.');
+class ConfigLoader {
+    constructor(defaultsPath) {
+        this.defaults = this.loadDefaults(defaultsPath);
     }
-    
-    return finalConfig;
+
+    loadDefaults(filePath) {
+        try {
+            const defaultsData = fs.readFileSync(filePath, 'utf8');
+            return JSON.parse(defaultsData);
+        } catch (error) {
+            console.error('Failed to load defaults:', error);
+            return {};
+        }
+    }
+
+    loadConfig(customPath) {
+        if (fs.existsSync(customPath)) {
+            try {
+                const customData = fs.readFileSync(customPath, 'utf8');
+                const customConfig = JSON.parse(customData);
+                return { ...this.defaults, ...customConfig };
+            } catch (error) {
+                console.error('Failed to load custom config:', error);
+                return this.defaults;
+            }
+        }
+        return this.defaults;
+    }
 }
 
-module.exports = { loadConfig };
+module.exports = ConfigLoader;
