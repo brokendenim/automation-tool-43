@@ -1,34 +1,39 @@
-class CustomError extends Error {
-    constructor(message, code) {
-        super(message);
-        this.code = code;
+function mergeDeep(target, source) {
+    for (const key of Object.keys(source)) {
+        if (source[key] instanceof Object && key in target)
+            target[key] = mergeDeep(target[key], source[key]);
+        else
+            target[key] = source[key];
     }
+    return target;
 }
 
-function handleError(err) {
-    if (err instanceof CustomError) {
-        console.error(`Custom Error [${err.code}]: ${err.message}`);
-    } else {
-        console.error(`General Error: ${err.message}`);
+function flattenObject(ob) {
+    const result = {};
+    for (const i in ob) {
+        if ((typeof ob[i]) === 'object' && !Array.isArray(ob[i])) {
+            const temp = flattenObject(ob[i]);
+            for (const j in temp) {
+                result[`${i}.${j}`] = temp[j];
+            }
+        } else {
+            result[i] = ob[i];
+        }
     }
+    return result;
 }
 
-function riskyOperation(data) {
+function parseJsonSafely(jsonString) {
     try {
-        if (!data) {
-            throw new CustomError('No data provided', 'ERR_NO_DATA');
-        }
-        // Simulating operations that might fail
-        if (typeof data !== 'string') {
-            throw new CustomError('Invalid data type', 'ERR_INVALID_TYPE');
-        }
-        // More logic can go here
-        console.log(`Operation successful with data: ${data}`);
-    } catch (err) {
-        handleError(err);
+        return JSON.parse(jsonString);
+    } catch (error) {
+        console.error('JSON parsing error:', error);
+        return null;
     }
 }
 
-riskyOperation(); // no data scenario
-riskyOperation(42); // invalid type scenario
-riskyOperation('Valid input'); // valid scenario
+module.exports = {
+    mergeDeep,
+    flattenObject,
+    parseJsonSafely
+};
