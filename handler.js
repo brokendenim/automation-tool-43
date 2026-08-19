@@ -1,22 +1,34 @@
-function normalizeData(dataArray) {
-    return dataArray.map(item => {
-        return Object.keys(item).reduce((acc, key) => {
-            acc[key.toLowerCase()] = typeof item[key] === 'string' ? item[key].trim() : item[key];
-            return acc;
-        }, {});
-    });
+class CustomError extends Error {
+    constructor(message, code) {
+        super(message);
+        this.code = code;
+    }
 }
 
-function filterData(dataArray, criteria) {
-    return dataArray.filter(item => {
-        return Object.keys(criteria).every(key => {
-            return item[key] === criteria[key];
-        });
-    });
+function handleError(err) {
+    if (err instanceof CustomError) {
+        console.error(`Custom Error [${err.code}]: ${err.message}`);
+    } else {
+        console.error(`General Error: ${err.message}`);
+    }
 }
 
-function transformData(dataArray, transformer) {
-    return dataArray.map(transformer);
+function riskyOperation(data) {
+    try {
+        if (!data) {
+            throw new CustomError('No data provided', 'ERR_NO_DATA');
+        }
+        // Simulating operations that might fail
+        if (typeof data !== 'string') {
+            throw new CustomError('Invalid data type', 'ERR_INVALID_TYPE');
+        }
+        // More logic can go here
+        console.log(`Operation successful with data: ${data}`);
+    } catch (err) {
+        handleError(err);
+    }
 }
 
-module.exports = { normalizeData, filterData, transformData };
+riskyOperation(); // no data scenario
+riskyOperation(42); // invalid type scenario
+riskyOperation('Valid input'); // valid scenario
