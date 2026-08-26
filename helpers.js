@@ -1,20 +1,44 @@
-function validateInput(input) {
-    if (typeof input !== 'string' || input.trim() === '') {
-        throw new Error('Invalid input: must be a non-empty string.');
-    }
-    return true;
-}
+const deepMorph = (obj, transformer) => {
+  if (obj === null || typeof obj !== 'object') {
+    return transformer(obj);
+  }
+  
+  const isArr = Array.isArray(obj);
+  const result = isArr ? [] : {};
+  
+  for (const key of Object.keys(obj)) {
+    result[key] = deepMorph(obj[key], transformer);
+  }
+  
+  return result;
+};
 
-function processInput(input) {
-    try {
-        validateInput(input);
-        console.log('Processing:', input);
-        // Simulate processing steps
-        // ...
-    } catch (error) {
-        console.error('Error:', error.message);
-    }
-}
+const queryPath = (target, path, fallback = undefined) => {
+  const segments = path.replace(/\[(\d+)\]/g, '.$1').split('.');
+  let current = target;
 
-const inputs = ['valid input', '', null, 'another valid input'];
-inputs.forEach(input => processInput(input));
+  for (const segment of segments) {
+    if (current === null || current === undefined || !(segment in Object(current))) {
+      return fallback;
+    }
+    current = current[segment];
+  }
+
+  return current;
+};
+
+const batchStream = function* (items, batchSize = 10) {
+  let chunk = [];
+  for (const item of items) {
+    chunk.push(item);
+    if (chunk.length === batchSize) {
+      yield chunk;
+      chunk = [];
+    }
+  }
+  if (chunk.length > 0) {
+    yield chunk;
+  }
+};
+
+module.exports = { deepMorph, queryPath, batchStream };
