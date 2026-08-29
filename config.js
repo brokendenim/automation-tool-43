@@ -1,74 +1,44 @@
-'use strict';
+const fs = require('fs');
+const path = require('path');
 
-function createConfigLoader(defaults = {}) {
+function deepMerge(base, override) {
+  const merged = { ...base };
+  Object.keys(override || {}).forEach((key) => {
+    if (override[key] && typeof override[key] === 'object' && !Array.isArray(override[key])) {
+      merged[key] = deepMerge(base[key] || {}, override[key]);
+    } else if (key in override) {
+      merged[key] = override[key];
+    }
+  });
+  return merged;
+}
+
+function loadConfig(configPath, defaults = {}) {
   let config = Object.assign({}, defaults);
-
-  const proxyHandler = {
-    get(target, prop) {
-      if (prop in target) {
-        return target[prop];
+  const resolvedPath = path.resolve(configPath);
+  if (fs.existsSync(resolvedPath)) {
+    try {
+      const rawContent = fs.readFileSync(resolvedPath, 'utf8');
+      const userData = JSON.parse(rawContent);
+      config = deepMerge(defaults, userData);
+    } catch (err) {
+      console.error('Error loading config file, defaults applied');
+    }
+  }
+  return new Proxy(config, {
+    get(target, key) {
+      if (key in target) {
+        return target[key];
       }
-      if (prop in defaults) {
-        return defaults[prop];
+      if (key in defaults) {
+        return defaults[key];
       }
       return undefined;
     },
-
-    set(target, prop, value) {
-      target[prop] = value;
-      return true;
+    has(target, key) {
+      return key in target || key in defaults;
     }
-  };
-
-  let configProxy = new Proxy(config, proxyHandler);
-
-  function merge(overrides) {
-    if (typeof overrides === 'string') {
-      try {
-        overrides = JSON.parse(overrides);
-      } catch (err) {
-        overrides = {};
-      }
-    }
-    if (typeof overrides !== 'object' || overrides === null) {
-      overrides = {};
-    }
-    config = Object.assign({}, config, overrides);
-    configProxy = new Proxy(config, proxyHandler);
-    return loader;
-  }
-
-  function getNested(path) {
-    const keys = path.split('.');
-    let current = configProxy;
-    for (const key of keys) {
-      current = current[key];
-      if (current === undefined) {
-        return undefined;
-      }
-    }
-    return current;
-  }
-
-  const loader = {
-    load: merge,
-    get(key) {
-      return configProxy[key];
-    },
-    set(key, value) {
-      configProxy[key] = value;
-    },
-    all() {
-      return Object.assign({}, config);
-    },
-    reset() {
-      config = Object.assign({}, defaults);
-      configProxy = new Proxy(config, proxyHandler);
-    },
-    getNested: getNested
-  };
-
-  return loader;
+  });
 }
 
-module.exports = createConfigLoader;
+module.exports = { loadConfig };
