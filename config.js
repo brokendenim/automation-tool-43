@@ -1,32 +1,74 @@
-// Configuration settings for the automation tool
-const config = {
-    apiEndpoint: 'https://api.example.com',
-    timeout: 5000,
-    retries: 3,
-    logLevel: 'info',
-};
+'use strict';
 
-function validateConfig(config) {
-    if (!config.apiEndpoint || typeof config.apiEndpoint !== 'string') {
-        throw new Error('Invalid API Endpoint');
+function createConfigLoader(defaults = {}) {
+  let config = Object.assign({}, defaults);
+
+  const proxyHandler = {
+    get(target, prop) {
+      if (prop in target) {
+        return target[prop];
+      }
+      if (prop in defaults) {
+        return defaults[prop];
+      }
+      return undefined;
+    },
+
+    set(target, prop, value) {
+      target[prop] = value;
+      return true;
     }
-    if (typeof config.timeout !== 'number' || config.timeout <= 0) {
-        throw new Error('Timeout must be a positive number');
+  };
+
+  let configProxy = new Proxy(config, proxyHandler);
+
+  function merge(overrides) {
+    if (typeof overrides === 'string') {
+      try {
+        overrides = JSON.parse(overrides);
+      } catch (err) {
+        overrides = {};
+      }
     }
-    if (typeof config.retries !== 'number' || config.retries < 0) {
-        throw new Error('Retries must be a non-negative number');
+    if (typeof overrides !== 'object' || overrides === null) {
+      overrides = {};
     }
-    const validLogLevels = ['info', 'warn', 'error', 'debug'];
-    if (!validLogLevels.includes(config.logLevel)) {
-        throw new Error('Invalid log level');
+    config = Object.assign({}, config, overrides);
+    configProxy = new Proxy(config, proxyHandler);
+    return loader;
+  }
+
+  function getNested(path) {
+    const keys = path.split('.');
+    let current = configProxy;
+    for (const key of keys) {
+      current = current[key];
+      if (current === undefined) {
+        return undefined;
+      }
     }
-    return true;
+    return current;
+  }
+
+  const loader = {
+    load: merge,
+    get(key) {
+      return configProxy[key];
+    },
+    set(key, value) {
+      configProxy[key] = value;
+    },
+    all() {
+      return Object.assign({}, config);
+    },
+    reset() {
+      config = Object.assign({}, defaults);
+      configProxy = new Proxy(config, proxyHandler);
+    },
+    getNested: getNested
+  };
+
+  return loader;
 }
 
-try {
-    validateConfig(config);
-} catch (error) {
-    console.error('Configuration error:', error.message);
-}
-
-module.exports = config;
+module.exports = createConfigLoader;
