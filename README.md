@@ -1,49 +1,36 @@
-# Automation Tool 43
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Automation Tool 43 is a versatile JavaScript library designed to streamline repetitive tasks and enhance productivity within development workflows. With a focus on simplicity and efficiency, this tool empowers developers to automate mundane processes, allowing them to concentrate on more complex elements of their projects.
+# automation-tool-43
+
+automation-tool-43 is a JavaScript automation tool designed to simplify the execution of repetitive tasks in development workflows. It allows users to define and run custom scripts that handle operations such as data processing and system maintenance directly through the command line.
 
 ## Features
-
-- **Task Automation**: Easily automate tasks such as file management, data processing, and API interactions with customizable scripts.
-- **Plugin Architecture**: Extend functionality through a modular plugin system that allows users to add capabilities without altering the core.
-- **Real-Time Monitoring**: Monitor running tasks in real-time with a built-in logging system that provides immediate feedback and debugging information.
-- **Cross-Platform Compatibility**: Works seamlessly across multiple operating systems, including Windows, macOS, and Linux.
+- Define automation tasks using plain JavaScript for full control over logic and integrations
+- Support for scheduling tasks with cron expressions to run at specified intervals
+- Built-in utilities for common actions including file manipulation and making HTTP requests
+- Robust error handling with automatic retries and comprehensive logging output
 
 ## Installation
 
-To get started with Automation Tool 43, ensure you have Node.js installed. You can install the tool using npm:
+```bash
+git clone https://github.com/Developer/automation-tool-43.git
+cd automation-tool-43
+npm install
+```
+
+## Basic Usage
+
+Run a task script from the command line:
 
 ```bash
-npm install automation-tool-43
+node bin/automation-tool-43.js tasks/backup.js
 ```
 
-## Basic Usage Example
+Example task file (`tasks/backup.js`):
 
-Here's a quick example of how to use Automation Tool 43 to automate a simple file copy operation:
-
-```javascript
-const { TaskScheduler, FileCopyTask } = require('automation-tool-43');
-
-// Create a new task scheduler instance
-const scheduler = new TaskScheduler();
-
-// Set up a file copy task
-const copyTask = new FileCopyTask({
-  source: './src/project-files',
-  destination: './backup/project-files',
-});
-
-// Add the task to the scheduler
-scheduler.addTask(copyTask);
-
-// Start the task scheduler
-scheduler.runTasks()
-  .then(() => console.log('Tasks completed successfully!'))
-  .catch(err => console.error('Error during task execution:', err));
+```js
+module.exports = async (utils) => {
+  await utils.copyDirectory('./data', './backup');
+  await utils.postRequest('https://api.example.com/notify', { status: 'complete' });
+};
 ```
-
-## License
-
-![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more details.
