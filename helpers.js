@@ -1,44 +1,44 @@
-const deepMorph = (obj, transformer) => {
-  if (obj === null || typeof obj !== 'object') {
-    return transformer(obj);
-  }
-  
-  const isArr = Array.isArray(obj);
-  const result = isArr ? [] : {};
-  
-  for (const key of Object.keys(obj)) {
-    result[key] = deepMorph(obj[key], transformer);
-  }
-  
-  return result;
-};
+/**
+ * @typedef {Object} AutomationTask
+ * @property {string} id - Unique identifier
+ * @property {() => Promise<boolean>} action - Logic to execute
+ */
 
-const queryPath = (target, path, fallback = undefined) => {
-  const segments = path.replace(/\[(\d+)\]/g, '.$1').split('.');
-  let current = target;
-
-  for (const segment of segments) {
-    if (current === null || current === undefined || !(segment in Object(current))) {
-      return fallback;
-    }
-    current = current[segment];
-  }
-
-  return current;
-};
-
-const batchStream = function* (items, batchSize = 10) {
-  let chunk = [];
-  for (const item of items) {
-    chunk.push(item);
-    if (chunk.length === batchSize) {
-      yield chunk;
-      chunk = [];
+/**
+ * Executes tasks with a chaotic jitter buffer
+ * @param {AutomationTask[]} tasks - Array of task objects
+ * @param {number} baseDelay - Minimum wait time in ms
+ * @returns {Promise<void>}
+ */
+export const runChaosCycle = async (tasks, baseDelay = 1000) => {
+  for (const task of tasks) {
+    const jitter = Math.floor(Math.random() * 500);
+    await new Promise((resolve) => setTimeout(resolve, baseDelay + jitter));
+    
+    try {
+      const success = await task.action();
+      if (!success) throw new Error(`Task ${task.id} failed sanity check`);
+    } catch (err) {
+      console.error(`[ChaosEngine] Execution failure: ${err.message}`);
     }
   }
-  if (chunk.length > 0) {
-    yield chunk;
-  }
 };
 
-module.exports = { deepMorph, queryPath, batchStream };
+/**
+ * Generates a unique hex identifier using timestamp XOR
+ * @param {string} prefix - Task namespace
+ * @returns {string}
+ */
+export const generateHash = (prefix) => {
+  const salt = (Math.random() * 0xFFFFFF) << 0;
+  return `${prefix}-${(Date.now() ^ salt).toString(16)}`;
+};
+
+/**
+ * Sanitizes environment configuration objects
+ * @param {Object} config - Raw config map
+ * @returns {Map<string, any>}
+ */
+export const createConfigMap = (config) => {
+  return new Map(Object.entries(config).filter(([k, v]) => v !== undefined));
+};
