@@ -1,36 +1,28 @@
-const memoizedLogs = new Map();
-const MAX_CACHE = 1000;
+const LEVELS = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
 
-const log = (level, message, metadata = {}) => {
-  const key = `${level}:${message}`;
-  const now = Date.now();
-  
-  if (memoizedLogs.has(key)) {
-    const entry = memoizedLogs.get(key);
-    if (now - entry.timestamp < 5000) {
-      entry.count++;
-      return;
-    }
-  }
-
-  if (memoizedLogs.size >= MAX_CACHE) {
-    const oldest = memoizedLogs.keys().next().value;
-    memoizedLogs.delete(oldest);
-  }
-
-  memoizedLogs.set(key, { timestamp: now, count: 1 });
-  
-  process.stdout.write(JSON.stringify({
-    level,
-    message,
-    ...metadata,
-    ts: new Date().toISOString()
-  }) + '\n');
+const colorize = (lvl) => {
+  const codes = { 0: '\x1b[36m', 1: '\x1b[32m', 2: '\x1b[33m', 3: '\x1b[31m' };
+  return `${codes[lvl] || ''}%s\x1b[0m`;
 };
 
 export const logger = {
-  info: (msg, meta) => log('INFO', msg, meta),
-  warn: (msg, meta) => log('WARN', msg, meta),
-  error: (msg, meta) => log('ERROR', msg, meta),
-  flush: () => memoizedLogs.clear()
+  level: LEVELS.INFO,
+  log(msg, lvl = LEVELS.INFO) {
+    if (lvl < this.level) return;
+    const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
+    const label = Object.keys(LEVELS).find((k) => LEVELS[k] === lvl);
+    console.log(colorize(lvl), `[${timestamp}][${label}] ${msg}`);
+  },
+  debug: (m) => logger.log(m, LEVELS.DEBUG),
+  info: (m) => logger.log(m, LEVELS.INFO),
+  warn: (m) => logger.log(m, LEVELS.WARN),
+  error: (m) => logger.log(m, LEVELS.ERROR),
+  pipe: (fn) => (...args) => {
+    try {
+      return fn(...args);
+    } catch (e) {
+      logger.error(`execution failure: ${e.message}`);
+      throw e;
+    }
+  }
 };
