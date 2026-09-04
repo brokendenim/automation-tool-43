@@ -1,44 +1,37 @@
 const fs = require('fs');
-const path = require('path');
 
-function deepMerge(base, override) {
-  const merged = { ...base };
-  Object.keys(override || {}).forEach((key) => {
-    if (override[key] && typeof override[key] === 'object' && !Array.isArray(override[key])) {
-      merged[key] = deepMerge(base[key] || {}, override[key]);
-    } else if (key in override) {
-      merged[key] = override[key];
-    }
-  });
-  return merged;
-}
-
-function loadConfig(configPath, defaults = {}) {
-  let config = Object.assign({}, defaults);
-  const resolvedPath = path.resolve(configPath);
-  if (fs.existsSync(resolvedPath)) {
-    try {
-      const rawContent = fs.readFileSync(resolvedPath, 'utf8');
-      const userData = JSON.parse(rawContent);
-      config = deepMerge(defaults, userData);
-    } catch (err) {
-      console.error('Error loading config file, defaults applied');
+const mergeDefaults = (userConfig, defaults) => {
+  const result = { ...defaults };
+  for (const key in userConfig) {
+    if (userConfig[key] !== undefined) {
+      result[key] = userConfig[key];
     }
   }
-  return new Proxy(config, {
-    get(target, key) {
-      if (key in target) {
-        return target[key];
-      }
-      if (key in defaults) {
-        return defaults[key];
-      }
-      return undefined;
-    },
-    has(target, key) {
-      return key in target || key in defaults;
-    }
-  });
-}
+  return result;
+};
 
-module.exports = { loadConfig };
+const loadConfiguration = (path, defaults) => {
+  try {
+    if (!fs.existsSync(path)) return defaults;
+    const fileContent = fs.readFileSync(path, 'utf8');
+    const parsed = JSON.parse(fileContent);
+    return mergeDefaults(parsed, defaults);
+  } catch (err) {
+    process.stdout.write(`Warning: configuration load failed: ${err.message}\n`);
+    return defaults;
+  }
+};
+
+const initAppConfig = (overrides = {}) => {
+  const defaults = {
+    port: 3000,
+    host: 'localhost',
+    debug: false,
+    timeout: 5000
+  };
+  
+  const rawConfig = loadConfiguration('./config.json', defaults);
+  return Object.freeze(mergeDefaults(overrides, rawConfig));
+};
+
+module.exports = { initAppConfig };
