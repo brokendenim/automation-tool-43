@@ -1,28 +1,25 @@
-const LEVELS = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+const fs = require('fs');
+const path = require('path');
 
-const colorize = (lvl) => {
-  const codes = { 0: '\x1b[36m', 1: '\x1b[32m', 2: '\x1b[33m', 3: '\x1b[31m' };
-  return `${codes[lvl] || ''}%s\x1b[0m`;
+const LOG_DIR = './logs';
+const MAX_SIZE = 1024 * 1024;
+
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
+
+const rotate = (file) => {
+  const timestamp = Date.now();
+  fs.renameSync(file, `${file}.${timestamp}.old`);
 };
 
-export const logger = {
-  level: LEVELS.INFO,
-  log(msg, lvl = LEVELS.INFO) {
-    if (lvl < this.level) return;
-    const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
-    const label = Object.keys(LEVELS).find((k) => LEVELS[k] === lvl);
-    console.log(colorize(lvl), `[${timestamp}][${label}] ${msg}`);
-  },
-  debug: (m) => logger.log(m, LEVELS.DEBUG),
-  info: (m) => logger.log(m, LEVELS.INFO),
-  warn: (m) => logger.log(m, LEVELS.WARN),
-  error: (m) => logger.log(m, LEVELS.ERROR),
-  pipe: (fn) => (...args) => {
-    try {
-      return fn(...args);
-    } catch (e) {
-      logger.error(`execution failure: ${e.message}`);
-      throw e;
-    }
+const logger = (message) => {
+  const logPath = path.join(LOG_DIR, 'app.log');
+  const entry = `[${new Date().toISOString()}] ${message}\n`;
+
+  if (fs.existsSync(logPath) && fs.statSync(logPath).size > MAX_SIZE) {
+    rotate(logPath);
   }
+
+  fs.appendFileSync(logPath, entry);
 };
+
+module.exports = logger;
