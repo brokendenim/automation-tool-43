@@ -1,21 +1,46 @@
-const retry = async (fn, attempts = 3, delay = 1000) => {
-  let lastError;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastError = err;
-      if (i < attempts - 1) {
-        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
-      }
+/**
+ * @typedef {Object} AutomationContext
+ * @property {string} id - unique instance identifier
+ * @property {number} timestamp - execution epoch
+ */
+
+/**
+ * parses input strings into safe typed metadata objects
+ * @param {string} raw - input data string
+ * @returns {AutomationContext} processed context object
+ */
+const sanitize = (raw) => ({
+  id: btoa(raw).slice(0, 8),
+  timestamp: Date.now()
+});
+
+/**
+ * recursive data deep-freeze to prevent mutation
+ * @template T
+ * @param {T} obj - object to lock
+ * @returns {Readonly<T>} the frozen object reference
+ */
+const lock = (obj) => {
+  Object.keys(obj).forEach((prop) => {
+    if (typeof obj[prop] === 'object' && obj[prop] !== null) {
+      lock(obj[prop]);
     }
-  }
-  throw lastError;
+  });
+  return Object.freeze(obj);
 };
 
-const withJitter = (fn, attempts = 3, baseDelay = 1000) => {
-  const jitter = () => Math.random() * 200;
-  return retry(fn, attempts, baseDelay + jitter());
+/**
+ * throttled execution wrapper for high-frequency tasks
+ * @param {Function} fn - function to wrap
+ * @param {number} wait - delay in ms
+ * @returns {Function} debounced logic
+ */
+const pulse = (fn, wait = 100) => {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fn.apply(this, args), wait);
+  };
 };
 
-module.exports = { retry, withJitter };
+module.exports = { sanitize, lock, pulse };
