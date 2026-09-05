@@ -1,37 +1,39 @@
 const fs = require('fs');
+const path = require('path');
 
-const mergeDefaults = (userConfig, defaults) => {
-  const result = { ...defaults };
-  for (const key in userConfig) {
-    if (userConfig[key] !== undefined) {
-      result[key] = userConfig[key];
-    }
-  }
-  return result;
+const defaults = {
+  timeout: 3000,
+  retry: true,
+  path: './data',
+  verbose: false
 };
 
-const loadConfiguration = (path, defaults) => {
-  try {
-    if (!fs.existsSync(path)) return defaults;
-    const fileContent = fs.readFileSync(path, 'utf8');
-    const parsed = JSON.parse(fileContent);
-    return mergeDefaults(parsed, defaults);
-  } catch (err) {
-    process.stdout.write(`Warning: configuration load failed: ${err.message}\n`);
-    return defaults;
-  }
-};
-
-const initAppConfig = (overrides = {}) => {
-  const defaults = {
-    port: 3000,
-    host: 'localhost',
-    debug: false,
-    timeout: 5000
-  };
+const loadConfig = (userPath) => {
+  const configPath = path.resolve(userPath || 'config.json');
   
-  const rawConfig = loadConfiguration('./config.json', defaults);
-  return Object.freeze(mergeDefaults(overrides, rawConfig));
+  let userConfig = {};
+  try {
+    if (fs.existsSync(configPath)) {
+      const raw = fs.readFileSync(configPath, 'utf-8');
+      userConfig = JSON.parse(raw);
+    }
+  } catch (err) {
+    console.warn('config load failure, using defaults', err.message);
+  }
+
+  const merged = Object.keys(defaults).reduce((acc, key) => {
+    acc[key] = userConfig.hasOwnProperty(key) ? userConfig[key] : defaults[key];
+    return acc;
+  }, {});
+
+  const proxyConfig = new Proxy(merged, {
+    get: (target, prop) => {
+      if (!(prop in target)) throw new Error(`config key ${String(prop)} is missing`);
+      return target[prop];
+    }
+  });
+
+  return proxyConfig;
 };
 
-module.exports = { initAppConfig };
+module.exports = { loadConfig };
