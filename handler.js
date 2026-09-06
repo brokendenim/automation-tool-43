@@ -1,27 +1,39 @@
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const withRetry = async (fn, attempts = 3, backoff = 1000) => {
-  let lastError;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastError = err;
-      if (i < attempts - 1) {
-        const delay = backoff * Math.pow(2, i) + Math.random() * 100;
-        await sleep(delay);
-      }
-    }
+class AutomationHandler {
+  constructor(context = {}) {
+    this.context = { ...context, initializedAt: Date.now() };
+    this.registry = new Map();
   }
-  throw lastError;
-};
 
-const fetchNetworkResource = async (url, options = {}) => {
-  return withRetry(async () => {
-    const response = await fetch(url, options);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  });
-};
+  register(name, fn) {
+    this.registry.set(name, fn);
+    return this;
+  }
 
-module.exports = { withRetry, fetchNetworkResource };
+  get execute() {
+    return new Proxy({}, {
+      get: (_, actionName) => {
+        return async (...args) => {
+          const task = this.registry.get(actionName);
+          if (!task) {
+            throw new Error(`Task '${actionName}' is not registered`);
+          }
+          const result = await task(this.context, ...args);
+          this.context[actionName] = result;
+          return result;
+        };
+      }
+    });
+  }
+
+  purge() {
+    const structuralKeys = ['initializedAt'];
+    Object.keys(this.context).forEach((key) => {
+      if (!structuralKeys.includes(key)) {
+        delete this.context[key];
+      }
+    });
+    return this;
+  }
+}
+
+module.exports = { AutomationHandler };
