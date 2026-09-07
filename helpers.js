@@ -1,44 +1,40 @@
-/**
- * @typedef {Object} AutomationTask
- * @property {string} id - Unique identifier
- * @property {() => Promise<boolean>} action - Logic to execute
- */
+const fs = require('fs');
+const path = require('path');
 
-/**
- * Executes tasks with a chaotic jitter buffer
- * @param {AutomationTask[]} tasks - Array of task objects
- * @param {number} baseDelay - Minimum wait time in ms
- * @returns {Promise<void>}
- */
-export const runChaosCycle = async (tasks, baseDelay = 1000) => {
-  for (const task of tasks) {
-    const jitter = Math.floor(Math.random() * 500);
-    await new Promise((resolve) => setTimeout(resolve, baseDelay + jitter));
-    
-    try {
-      const success = await task.action();
-      if (!success) throw new Error(`Task ${task.id} failed sanity check`);
-    } catch (err) {
-      console.error(`[ChaosEngine] Execution failure: ${err.message}`);
-    }
+const createDirectory = (dir) => !fs.existsSync(dir) && fs.mkdirSync(dir, { recursive: true });
+
+const sanitizeBuffer = (data) => Buffer.isBuffer(data) ? data.toString('utf8').replace(/\0/g, '') : String(data);
+
+const streamPipeline = (source, destination) => {
+  return new Promise((resolve, reject) => {
+    source.pipe(destination).on('finish', resolve).on('error', reject);
+  });
+};
+
+const getFileStats = (filePath) => {
+  try {
+    return fs.statSync(filePath);
+  } catch (err) {
+    return null;
   }
 };
 
-/**
- * Generates a unique hex identifier using timestamp XOR
- * @param {string} prefix - Task namespace
- * @returns {string}
- */
-export const generateHash = (prefix) => {
-  const salt = (Math.random() * 0xFFFFFF) << 0;
-  return `${prefix}-${(Date.now() ^ salt).toString(16)}`;
+const flattenConfig = (obj, prefix = '') => {
+  return Object.keys(obj).reduce((acc, k) => {
+    const pre = prefix.length ? prefix + '.' : '';
+    if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
+      Object.assign(acc, flattenConfig(obj[k], pre + k));
+    } else {
+      acc[pre + k] = obj[k];
+    }
+    return acc;
+  }, {});
 };
 
-/**
- * Sanitizes environment configuration objects
- * @param {Object} config - Raw config map
- * @returns {Map<string, any>}
- */
-export const createConfigMap = (config) => {
-  return new Map(Object.entries(config).filter(([k, v]) => v !== undefined));
+module.exports = {
+  createDirectory,
+  sanitizeBuffer,
+  streamPipeline,
+  getFileStats,
+  flattenConfig
 };
