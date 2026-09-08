@@ -9,27 +9,31 @@ const memoize = (fn) => {
   };
 };
 
-const pipeline = (...fns) => (initialValue) => 
-  fns.reduce((acc, fn) => fn(acc), initialValue);
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const pick = (obj, keys) => 
-  keys.reduce((acc, key) => (key in obj ? { ...acc, [key]: obj[key] } : acc), {});
-
-const deepFreeze = (obj) => {
-  Object.keys(obj).forEach((prop) => {
-    if (typeof obj[prop] === 'object' && obj[prop] !== null) deepFreeze(obj[prop]);
-  });
-  return Object.freeze(obj);
-};
-
-const attempt = (fn, fallback) => {
-  try {
-    return fn();
-  } catch {
-    return typeof fallback === 'function' ? fallback() : fallback;
+const batchProcess = (tasks, chunkSize = 10) => {
+  const results = [];
+  for (let i = 0; i < tasks.length; i += chunkSize) {
+    results.push(...tasks.slice(i, i + chunkSize).map(t => t()));
   }
+  return results;
 };
 
-module.exports = { memoize, pipeline, wait, pick, deepFreeze, attempt };
+const lazyLoader = (factory) => {
+  let instance = null;
+  return () => {
+    if (!instance) instance = factory();
+    return instance;
+  };
+};
+
+const throttleEvent = (fn, wait) => {
+  let timer = null;
+  return (...args) => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      fn(...args);
+      timer = null;
+    }, wait);
+  };
+};
+
+export { memoize, batchProcess, lazyLoader, throttleEvent };
