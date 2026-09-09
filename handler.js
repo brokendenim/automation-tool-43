@@ -1,39 +1,44 @@
-class AutomationHandler {
-  constructor(context = {}) {
-    this.context = { ...context, initializedAt: Date.now() };
-    this.registry = new Map();
-  }
+const VALID_ACTIONS = new Set(['SYNC', 'PURGE', 'INDEX']);
 
-  register(name, fn) {
-    this.registry.set(name, fn);
-    return this;
-  }
+const createGuard = (schema) => new Proxy(schema, {
+  get: (target, prop) => target[prop] || (() => true)
+});
 
-  get execute() {
-    return new Proxy({}, {
-      get: (_, actionName) => {
-        return async (...args) => {
-          const task = this.registry.get(actionName);
-          if (!task) {
-            throw new Error(`Task '${actionName}' is not registered`);
-          }
-          const result = await task(this.context, ...args);
-          this.context[actionName] = result;
-          return result;
-        };
-      }
-    });
-  }
+const schemaRules = createGuard({
+  id: (v) => typeof v === 'string' && v.startsWith('task_'),
+  payload: (v) => v && typeof v === 'object' && Object.keys(v).length > 0,
+  action: (v) => VALID_ACTIONS.has(v)
+});
 
-  purge() {
-    const structuralKeys = ['initializedAt'];
-    Object.keys(this.context).forEach((key) => {
-      if (!structuralKeys.includes(key)) {
-        delete this.context[key];
-      }
-    });
-    return this;
+function* loopBatch(batch) {
+  for (const entry of batch) {
+    yield entry;
   }
 }
 
-module.exports = { AutomationHandler };
+function processBatch(batch) {
+  const stats = { validCount: 0, invalidCount: 0, log: [] };
+  const stream = loopBatch(Array.isArray(batch) ? batch : []);
+
+  for (const rawTask of stream) {
+    const task = rawTask ?? {};
+    const fieldKeys = ['id', 'payload', 'action'];
+    const failures = fieldKeys
+      .map((key) => ({ key, ok: schemaRules[key](task[key]) }))
+      .filter((res) => !res.ok)
+      .map((res) => res.key);
+
+    if (failures.length > 0) {
+      stats.invalidCount++;
+      stats.log.push({ task: task.id || 'unknown', status: 'REJECTED', missing: failures });
+      continue;
+    }
+
+    stats.validCount++;
+    stats.log.push({ task: task.id, status: 'PROCESSED', action: task.action });
+  }
+
+  return stats;
+}
+
+module.exports = { processBatch };
