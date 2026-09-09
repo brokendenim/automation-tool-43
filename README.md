@@ -1,36 +1,47 @@
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 # automation-tool-43
 
-automation-tool-43 is a JavaScript automation tool designed to simplify the execution of repetitive tasks in development workflows. It allows users to define and run custom scripts that handle operations such as data processing and system maintenance directly through the command line.
+Automation-tool-43 is a lightweight, Node.js-based utility designed to streamline repetitive task execution across local development environments. It provides a robust engine for scheduling, file manipulation, and process monitoring without the overhead of heavy workflow managers.
 
 ## Features
-- Define automation tasks using plain JavaScript for full control over logic and integrations
-- Support for scheduling tasks with cron expressions to run at specified intervals
-- Built-in utilities for common actions including file manipulation and making HTTP requests
-- Robust error handling with automatic retries and comprehensive logging output
+
+*   **Task Scheduling:** Execute complex script chains based on cron expressions or interval-based triggers.
+*   **File System Watcher:** Automatically trigger defined callbacks when specific files or directories undergo changes.
+*   **Process Orchestrator:** Manage multiple child processes concurrently with built-in logging and automatic restart policies.
+*   **Environment Integration:** Native support for `.env` file injection, ensuring secure configuration management across development and staging environments.
 
 ## Installation
 
-```bash
-git clone https://github.com/Developer/automation-tool-43.git
-cd automation-tool-43
-npm install
-```
-
-## Basic Usage
-
-Run a task script from the command line:
+Ensure you have [Node.js](https://nodejs.org/) (v16+) installed. Run the following command in your project root:
 
 ```bash
-node bin/automation-tool-43.js tasks/backup.js
+npm install automation-tool-43
 ```
 
-Example task file (`tasks/backup.js`):
+## Usage
 
-```js
-module.exports = async (utils) => {
-  await utils.copyDirectory('./data', './backup');
-  await utils.postRequest('https://api.example.com/notify', { status: 'complete' });
+Create an `automation.config.js` file to define your tasks, then execute them using the CLI:
+
+```javascript
+// automation.config.js
+module.exports = {
+  tasks: [
+    {
+      name: 'cleanup-logs',
+      pattern: '*/logs/*.log',
+      action: () => console.log('Cleaning logs...')
+    }
+  ]
 };
 ```
+
+Run the tool to start the monitor:
+
+```bash
+npx automation-tool-43 start --config automation.config.js
+```
+
+## License
+
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+Distributed under the MIT License. See `LICENSE` for more information.
