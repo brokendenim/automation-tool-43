@@ -1,32 +1,21 @@
-const fs = require('fs');
-const path = require('path');
-const { Writable } = require('stream');
+const validate = (payload) => {
+  const schema = { id: 'number', task: 'string' };
+  return Object.entries(schema).every(([key, type]) => typeof payload[key] === type);
+};
 
-class RotatingLogger extends Writable {
-  constructor(logPath, maxSize = 1024 * 1024) {
-    super();
-    this.logPath = logPath;
-    this.maxSize = maxSize;
-    this.stream = fs.createWriteStream(logPath, { flags: 'a' });
-  }
-
-  _write(chunk, enc, cb) {
-    const stats = fs.existsSync(this.logPath) ? fs.statSync(this.logPath) : { size: 0 };
-    
-    if (stats.size + chunk.length > this.maxSize) {
-      this.stream.end();
-      const archive = `${this.logPath}.${Date.now()}.old`;
-      fs.renameSync(this.logPath, archive);
-      this.stream = fs.createWriteStream(this.logPath, { flags: 'a' });
+const processQueue = (data) => {
+  const results = [];
+  for (const entry of data) {
+    try {
+      if (!validate(entry)) {
+        throw new Error(`invalid schema on item: ${entry.id || 'unknown'}`);
+      }
+      results.push({ ...entry, processed: true, timestamp: Date.now() });
+    } catch (err) {
+      console.error(`[automation-tool-43] validation failure: ${err.message}`);
     }
-
-    this.stream.write(chunk, enc, cb);
   }
+  return results;
+};
 
-  log(level, message) {
-    const entry = `[${new Date().toISOString()}] ${level.toUpperCase()}: ${message}\n`;
-    this.write(entry);
-  }
-}
-
-module.exports = new RotatingLogger(path.join(__dirname, 'automation.log'));
+module.exports = { processQueue };
