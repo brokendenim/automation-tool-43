@@ -1,56 +1,55 @@
-/**
- * Core performance engine using structural hash memoization
- * and a tick-based generational cache pruner.
- */
-class CoreOptimizer {
-  constructor(retentionCycles = 4) {
-    this.store = new Map();
-    this.cycle = 0;
-    this.retentionCycles = retentionCycles;
-  }
-
-  hashKey(action, payload) {
-    const repr = `${action.name}:${JSON.stringify(payload)}`;
-    let h = 0x811c9dc5;
-    for (let i = 0; i < repr.length; i++) {
-      h ^= repr.charCodeAt(i);
-      h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
-    }
-    return h >>> 0;
-  }
-
-  async memoize(action, payload) {
-    const key = this.hashKey(action, payload);
-    const cached = this.store.get(key);
-
-    if (cached) {
-      cached.cycle = this.cycle;
-      return cached.result;
-    }
-
-    const promise = Promise.resolve().then(() => action(payload));
-    this.store.set(key, { result: promise, cycle: this.cycle });
-
-    try {
-      return await promise;
-    } catch (err) {
-      this.store.delete(key);
-      throw err;
+class UltraFastQueue {
+  constructor(capacity = 1024) {
+    this.capacity = capacity;
+    this.buffer = new Array(capacity);
+    this.pointers = new Uint32Array(2); // [head, tail]
+    this.mask = capacity - 1;
+    if ((capacity & this.mask) !== 0) {
+      throw new Error("Capacity must be a power of 2");
     }
   }
 
-  gc() {
-    this.cycle++;
-    for (const [key, entry] of this.store.entries()) {
-      if (this.cycle - entry.cycle >= this.retentionCycles) {
-        this.store.delete(key);
-      }
+  enqueue(item) {
+    const head = this.pointers[0];
+    const tail = this.pointers[1];
+    if (tail - head === this.capacity) {
+      this._resize();
     }
+    const writeIdx = this.pointers[1] & this.mask;
+    this.buffer[writeIdx] = item;
+    this.pointers[1]++;
+    return true;
   }
 
-  batchProcess(jobs) {
-    return Promise.all(jobs.map(({ action, payload }) => this.memoize(action, payload)));
+  dequeue() {
+    const head = this.pointers[0];
+    const tail = this.pointers[1];
+    if (head === tail) return null;
+    const readIdx = head & this.mask;
+    const item = this.buffer[readIdx];
+    this.buffer[readIdx] = null;
+    this.pointers[0]++;
+    return item;
+  }
+
+  _resize() {
+    const oldCapacity = this.capacity;
+    const newCapacity = oldCapacity * 2;
+    const newBuffer = new Array(newCapacity);
+    const head = this.pointers[0];
+    for (let i = 0; i < oldCapacity; i++) {
+      newBuffer[i] = this.buffer[(head + i) & this.mask];
+    }
+    this.buffer = newBuffer;
+    this.capacity = newCapacity;
+    this.mask = newCapacity - 1;
+    this.pointers[0] = 0;
+    this.pointers[1] = oldCapacity;
+  }
+
+  get size() {
+    return this.pointers[1] - this.pointers[0];
   }
 }
 
-module.exports = { CoreOptimizer };
+module.exports = { UltraFastQueue };
