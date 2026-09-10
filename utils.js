@@ -1,46 +1,54 @@
 /**
- * @typedef {Object} AutomationContext
- * @property {string} id - unique instance identifier
- * @property {number} timestamp - execution epoch
+ * A creative utility toolkit with a Proxy-based safe navigator and pipeline composer.
  */
 
 /**
- * parses input strings into safe typed metadata objects
- * @param {string} raw - input data string
- * @returns {AutomationContext} processed context object
+ * Wraps an object to allow safe, deep property access without throwing TypeError.
+ * Returns a chainable proxy that resolves when converted to primitive.
  */
-const sanitize = (raw) => ({
-  id: btoa(raw).slice(0, 8),
-  timestamp: Date.now()
-});
-
-/**
- * recursive data deep-freeze to prevent mutation
- * @template T
- * @param {T} obj - object to lock
- * @returns {Readonly<T>} the frozen object reference
- */
-const lock = (obj) => {
-  Object.keys(obj).forEach((prop) => {
-    if (typeof obj[prop] === 'object' && obj[prop] !== null) {
-      lock(obj[prop]);
+const safeNavigate = (obj) => {
+  const handler = {
+    get: (target, prop) => {
+      if (prop === 'valueOf' || prop === 'toString') {
+        return () => target;
+      }
+      const val = target != null ? target[prop] : undefined;
+      return safeNavigate(val);
     }
-  });
-  return Object.freeze(obj);
+  };
+  return new Proxy(obj ?? {}, handler);
 };
 
 /**
- * throttled execution wrapper for high-frequency tasks
- * @param {Function} fn - function to wrap
- * @param {number} wait - delay in ms
- * @returns {Function} debounced logic
+ * A sleep function that resolves after a random jitter interval
+ * to help mimic human delay in scraping contexts.
  */
-const pulse = (fn, wait = 100) => {
-  let timeout;
-  return (...args) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => fn.apply(this, args), wait);
-  };
+const organicDelay = (baseMs = 1000, variance = 0.5) => {
+  const min = baseMs * (1 - variance);
+  const max = baseMs * (1 + variance);
+  const delay = Math.floor(Math.random() * (max - min + 1) + min);
+  return new Promise(resolve => setTimeout(resolve, delay));
 };
 
-module.exports = { sanitize, lock, pulse };
+/**
+ * A pipeline executor that feeds values through operations, capturing execution telemetry.
+ */
+const pipeWithTelemetry = async (initialValue, ...fns) => {
+  let current = initialValue;
+  const telemetry = { start: Date.now(), steps: [] };
+
+  for (const [index, fn] of fns.entries()) {
+    const stepStart = Date.now();
+    try {
+      current = await fn(current);
+      telemetry.steps.push({ step: index, status: 'success', duration: Date.now() - stepStart });
+    } catch (error) {
+      telemetry.steps.push({ step: index, status: 'failed', error: error.message, duration: Date.now() - stepStart });
+      throw { lastValue: current, error, telemetry };
+    }
+  }
+
+  return { result: current, telemetry: { ...telemetry, totalDuration: Date.now() - telemetry.start } };
+};
+
+module.exports = { safeNavigate, organicDelay, pipeWithTelemetry };
