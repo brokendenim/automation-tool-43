@@ -1,42 +1,29 @@
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (!cache.has(key)) cache.set(key, fn(...args));
-    return cache.get(key);
-  };
-};
+const fs = require('fs');
+const path = require('path');
 
-const pipeline = (...fns) => (initialValue) => 
-  fns.reduce((acc, fn) => fn(acc), initialValue);
+const LOG_FILE = 'automation.log';
+const MAX_SIZE = 1024 * 512;
 
-const deepFreeze = (obj) => {
-  Object.keys(obj).forEach((prop) => {
-    if (typeof obj[prop] === 'object' && obj[prop] !== null) {
-      deepFreeze(obj[prop]);
-    }
-  });
-  return Object.freeze(obj);
-};
-
-const asyncGuard = (fn, fallback) => async (...args) => {
-  try {
-    return await fn(...args);
-  } catch (err) {
-    console.error('[Automation-Tool-43] Execution fault:', err.message);
-    return typeof fallback === 'function' ? fallback(err) : fallback;
+const rotate = (filePath) => {
+  if (!fs.existsSync(filePath)) return;
+  const stats = fs.statSync(filePath);
+  if (stats.size > MAX_SIZE) {
+    const timestamp = Date.now();
+    fs.renameSync(filePath, `${filePath}.${timestamp}.old`);
   }
 };
 
-const objectFlatten = (obj, prefix = '') => 
-  Object.keys(obj).reduce((acc, k) => {
-    const pre = prefix.length ? prefix + '.' : '';
-    if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
-      Object.assign(acc, objectFlatten(obj[k], pre + k));
-    } else {
-      acc[pre + k] = obj[k];
-    }
-    return acc;
-  }, {});
+const logger = {
+  log: (message) => {
+    rotate(LOG_FILE);
+    const entry = `[${new Date().toISOString()}] ${message}\n`;
+    fs.appendFileSync(LOG_FILE, entry);
+  },
+  error: (err) => {
+    rotate(LOG_FILE);
+    const entry = `[${new Date().toISOString()}] ERROR: ${err.stack || err}\n`;
+    fs.appendFileSync(LOG_FILE, entry);
+  }
+};
 
-module.exports = { memoize, pipeline, deepFreeze, asyncGuard, objectFlatten };
+module.exports = logger;
