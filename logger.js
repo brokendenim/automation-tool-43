@@ -1,21 +1,37 @@
-const validate = (payload) => {
-  const schema = { id: 'number', task: 'string' };
-  return Object.entries(schema).every(([key, type]) => typeof payload[key] === type);
-};
+/**
+ * @typedef {Object} LogOptions
+ * @property {string} [level='INFO'] - severity level
+ */
 
-const processQueue = (data) => {
-  const results = [];
-  for (const entry of data) {
-    try {
-      if (!validate(entry)) {
-        throw new Error(`invalid schema on item: ${entry.id || 'unknown'}`);
-      }
-      results.push({ ...entry, processed: true, timestamp: Date.now() });
-    } catch (err) {
-      console.error(`[automation-tool-43] validation failure: ${err.message}`);
+/**
+ * functional-style logger with tag-based filtering
+ * @param {string} tag - module context
+ * @returns {(message: string, options?: LogOptions) => void}
+ */
+const createLogger = (tag) => {
+  const style = 'color: #00ff00; font-weight: bold;';
+  return (message, options = {}) => {
+    const { level = 'INFO' } = options;
+    const timestamp = new Date().toISOString();
+    const entry = `[${timestamp}] [${level}] [${tag}]: ${message}`;
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`%c${entry}`, style);
+    } else {
+      process.stdout.write(entry + '\n');
     }
-  }
-  return results;
+  };
 };
 
-module.exports = { processQueue };
+/**
+ * creates a dedicated error handler for automation workflows
+ * @param {Error} err - exception instance
+ * @param {string} context - function name
+ * @returns {void}
+ */
+const logError = (err, context) => {
+  const handler = createLogger('CORE-ERROR');
+  handler(`${context} -> ${err.message}`, { level: 'ERROR' });
+};
+
+module.exports = { createLogger, logError };
