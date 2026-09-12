@@ -1,37 +1,26 @@
-/**
- * @typedef {Object} LogOptions
- * @property {string} [level='INFO'] - severity level
- */
+const fs = require('fs');
+const path = require('path');
 
-/**
- * functional-style logger with tag-based filtering
- * @param {string} tag - module context
- * @returns {(message: string, options?: LogOptions) => void}
- */
-const createLogger = (tag) => {
-  const style = 'color: #00ff00; font-weight: bold;';
-  return (message, options = {}) => {
-    const { level = 'INFO' } = options;
-    const timestamp = new Date().toISOString();
-    const entry = `[${timestamp}] [${level}] [${tag}]: ${message}`;
+const LOG_DIR = path.join(__dirname, 'logs');
+const MAX_SIZE = 1024 * 1024;
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`%c${entry}`, style);
-    } else {
-      process.stdout.write(entry + '\n');
-    }
-  };
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
+
+const getLogPath = () => path.join(LOG_DIR, 'app.log');
+
+const rotate = () => {
+  const logFile = getLogPath();
+  if (fs.existsSync(logFile) && fs.statSync(logFile).size > MAX_SIZE) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    fs.renameSync(logFile, path.join(LOG_DIR, `app-${timestamp}.log`));
+  }
 };
 
-/**
- * creates a dedicated error handler for automation workflows
- * @param {Error} err - exception instance
- * @param {string} context - function name
- * @returns {void}
- */
-const logError = (err, context) => {
-  const handler = createLogger('CORE-ERROR');
-  handler(`${context} -> ${err.message}`, { level: 'ERROR' });
+const logger = (msg) => {
+  rotate();
+  const entry = `[${new Date().toISOString()}] ${msg}\n`;
+  process.stdout.write(entry);
+  fs.appendFileSync(getLogPath(), entry);
 };
 
-module.exports = { createLogger, logError };
+module.exports = { logger };
