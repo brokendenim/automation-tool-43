@@ -1,24 +1,53 @@
-const retry = (fn, { attempts = 3, delay = 1000, backoff = 2 } = {}) => {
-  let count = 0;
-  const execute = async (...args) => {
+function* fibonacciJitter(baseMs = 100) {
+  let [a, b] = [1, 1];
+  while (true) {
+    const jitter = Math.floor(Math.random() * 50);
+    yield a * baseMs + jitter;
+    [a, b] = [b, a + b];
+  }
+}
+
+export async function executeWithRetry(asyncFn, options = {}) {
+  const {
+    maxAttempts = 5,
+    retryIf = () => true,
+    delayStrategy = fibonacciJitter(150),
+    onRetry = null
+  } = options;
+
+  let lastError;
+  const history = [];
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await fn(...args);
-    } catch (err) {
-      count++;
-      if (count >= attempts) throw err;
-      await new Promise((res) => setTimeout(res, delay * Math.pow(backoff, count - 1)));
-      return execute(...args);
+      const result = await asyncFn(attempt, history);
+      return { success: true, attempts: attempt, data: result, history };
+    } catch (error) {
+      lastError = error;
+      history.push({ attempt, error, timestamp: Date.now() });
+
+      if (attempt === maxAttempts || !retryIf(error)) {
+        break;
+      }
+
+      const waitMs = delayStrategy.next().value;
+      if (typeof onRetry === 'function') {
+        onRetry(error, attempt, waitMs);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
-  };
-  return execute;
-};
+  }
 
-const networkRequest = async (url) => {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
-};
+  return { success: false, attempts: maxAttempts, error: lastError, history };
+}
 
-const safeFetch = retry(networkRequest, { attempts: 4, delay: 500 });
-
-export { retry, safeFetch };
+export function createRetryProxy(targetObj, retryOptions = {}) {
+  return new Proxy(targetObj, {
+    get(target, propKey) {
+      const orig = target[propKey];
+      if (typeof orig !== 'function') return orig;
+      return (...args) => executeWithRetry(() => orig.apply(target, args), retryOptions);
+    }
+  });
+}
