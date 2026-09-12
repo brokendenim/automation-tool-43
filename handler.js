@@ -1,44 +1,31 @@
-const VALID_ACTIONS = new Set(['SYNC', 'PURGE', 'INDEX']);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const createGuard = (schema) => new Proxy(schema, {
-  get: (target, prop) => target[prop] || (() => true)
-});
+const withRetry = async (fn, options = {}) => {
+  const { maxRetries = 3, backoff = 1000 } = options;
+  let attempt = 0;
 
-const schemaRules = createGuard({
-  id: (v) => typeof v === 'string' && v.startsWith('task_'),
-  payload: (v) => v && typeof v === 'object' && Object.keys(v).length > 0,
-  action: (v) => VALID_ACTIONS.has(v)
-});
-
-function* loopBatch(batch) {
-  for (const entry of batch) {
-    yield entry;
-  }
-}
-
-function processBatch(batch) {
-  const stats = { validCount: 0, invalidCount: 0, log: [] };
-  const stream = loopBatch(Array.isArray(batch) ? batch : []);
-
-  for (const rawTask of stream) {
-    const task = rawTask ?? {};
-    const fieldKeys = ['id', 'payload', 'action'];
-    const failures = fieldKeys
-      .map((key) => ({ key, ok: schemaRules[key](task[key]) }))
-      .filter((res) => !res.ok)
-      .map((res) => res.key);
-
-    if (failures.length > 0) {
-      stats.invalidCount++;
-      stats.log.push({ task: task.id || 'unknown', status: 'REJECTED', missing: failures });
-      continue;
+  while (attempt <= maxRetries) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      if (attempt > maxRetries) throw err;
+      
+      const jitter = Math.random() * 200;
+      const delay = Math.pow(2, attempt) * backoff + jitter;
+      
+      console.warn(`Attempt ${attempt} failed, retrying in ${Math.round(delay)}ms...`);
+      await sleep(delay);
     }
-
-    stats.validCount++;
-    stats.log.push({ task: task.id, status: 'PROCESSED', action: task.action });
   }
+};
 
-  return stats;
-}
+const fetchWithResilience = async (url, config) => {
+  return await withRetry(async () => {
+    const response = await fetch(url, config);
+    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+    return response.json();
+  }, { maxRetries: 4, backoff: 500 });
+};
 
-module.exports = { processBatch };
+module.exports = { withRetry, fetchWithResilience };
