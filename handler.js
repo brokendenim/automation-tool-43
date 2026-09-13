@@ -1,31 +1,33 @@
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const fs = require('fs');
+const path = require('path');
 
-const withRetry = async (fn, options = {}) => {
-  const { maxRetries = 3, backoff = 1000 } = options;
-  let attempt = 0;
-
-  while (attempt <= maxRetries) {
-    try {
-      return await fn();
-    } catch (err) {
-      attempt++;
-      if (attempt > maxRetries) throw err;
-      
-      const jitter = Math.random() * 200;
-      const delay = Math.pow(2, attempt) * backoff + jitter;
-      
-      console.warn(`Attempt ${attempt} failed, retrying in ${Math.round(delay)}ms...`);
-      await sleep(delay);
+const Handler = (() => {
+  const _registry = new Map();
+  
+  return {
+    register: (type, fn) => _registry.set(type, fn),
+    execute: (type, payload) => {
+      const task = _registry.get(type);
+      if (!task) throw new Error(`Unknown type: ${type}`);
+      return task(payload);
+    },
+    cleanup: (dir) => {
+      fs.readdir(dir, (err, files) => {
+        if (err) return;
+        files.filter(f => f.endsWith('.tmp')).forEach(f => {
+          fs.unlink(path.join(dir, f), () => {});
+        });
+      });
     }
-  }
+  };
+})();
+
+const init = (config) => {
+  Handler.register('process', (data) => {
+    console.log(`Processing: ${JSON.stringify(data)}`);
+    return { status: 'ok', ts: Date.now() };
+  });
+  return Handler;
 };
 
-const fetchWithResilience = async (url, config) => {
-  return await withRetry(async () => {
-    const response = await fetch(url, config);
-    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-    return response.json();
-  }, { maxRetries: 4, backoff: 500 });
-};
-
-module.exports = { withRetry, fetchWithResilience };
+module.exports = { init };
