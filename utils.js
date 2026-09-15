@@ -1,52 +1,25 @@
-/**
- * @typedef {Object} AutomationContext
- * @property {string} id - unique identifier
- * @property {boolean} active - operation status
- */
-
-/**
- * creates a generator function to produce sequential IDs
- * @param {string} prefix - prefix for the id string
- * @returns {function(): string} id factory
- */
-export const createIdGenerator = (prefix) => {
-  let counter = 0;
-  return () => `${prefix}_${++counter}`;
+const retry = (fn, { retries = 3, delay = 1000, factor = 2 } = {}) => {
+  return new Promise((resolve, reject) => {
+    const attempt = (n, currentDelay) => {
+      fn()
+        .then(resolve)
+        .catch((error) => {
+          if (n <= 0) return reject(error);
+          setTimeout(() => attempt(n - 1, currentDelay * factor), currentDelay);
+        });
+    };
+    attempt(retries, delay);
+  });
 };
 
-/**
- * transforms deep object keys to camelCase using recursion
- * @param {Object} obj - the target object to mutate
- * @returns {Object} transformed object
- */
-export const sanitizeKeys = (obj) => {
-  return Object.keys(obj).reduce((acc, key) => {
-    const camel = key.replace(/([-_][a-z])/ig, ($1) => $1.toUpperCase().replace('-', '').replace('_', ''));
-    acc[camel] = typeof obj[key] === 'object' && obj[key] !== null ? sanitizeKeys(obj[key]) : obj[key];
-    return acc;
-  }, {});
+const withExponentialBackoff = async (task, options) => {
+  const config = { retries: 3, delay: 500, ...options };
+  try {
+    return await retry(task, config);
+  } catch (err) {
+    console.error(`[automation-tool-43] task failed after ${config.retries} attempts`);
+    throw err;
+  }
 };
 
-/**
- * wraps a promise with a timeout rejection
- * @param {Promise} promise - the operation to track
- * @param {number} ms - limit in milliseconds
- * @returns {Promise} result or timeout error
- */
-export const withTimeout = (promise, ms) => {
-  const timeout = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error('operation timed out')), ms)
-  );
-  return Promise.race([promise, timeout]);
-};
-
-/**
- * formats throughput metrics for log display
- * @param {number} ops - count of operations
- * @param {number} duration - ms elapsed
- * @returns {string} rate report
- */
-export const formatPerformance = (ops, duration) => {
-  const rate = (ops / (duration / 1000)).toFixed(2);
-  return `throughput at ${rate} ops/sec`;
-};
+module.exports = { withExponentialBackoff };
