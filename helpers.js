@@ -1,26 +1,34 @@
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const retry = async (fn, attempts = 3, interval = 1000, backoff = 1.5) => {
-  let lastError;
-  let currentDelay = interval;
+const retry = async (fn, options = {}) => {
+  const { attempts = 3, interval = 1000, backoff = 1.5 } = options;
+  let currentAttempt = 0;
+  let currentInterval = interval;
 
-  for (let i = 0; i < attempts; i++) {
+  while (currentAttempt < attempts) {
     try {
       return await fn();
-    } catch (err) {
-      lastError = err;
-      if (i < attempts - 1) {
-        await delay(currentDelay);
-        currentDelay *= backoff;
-      }
+    } catch (error) {
+      currentAttempt++;
+      if (currentAttempt >= attempts) throw error;
+
+      await delay(currentInterval);
+      currentInterval *= backoff;
     }
   }
-  throw lastError;
 };
 
-const withRetry = (fn, options = {}) => {
-  const { attempts = 3, interval = 1000 } = options;
-  return (...args) => retry(() => fn(...args), attempts, interval);
+const robustFetch = async (url, options = {}) => {
+  return retry(async () => {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      throw new Error(`HTTP Error: ${response.status}`);
+    }
+    return response.json();
+  }, {
+    attempts: 5,
+    interval: 500
+  });
 };
 
-module.exports = { withRetry };
+module.exports = { retry, robustFetch };
