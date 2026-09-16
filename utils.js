@@ -1,25 +1,32 @@
-const retry = (fn, { retries = 3, delay = 1000, factor = 2 } = {}) => {
-  return new Promise((resolve, reject) => {
-    const attempt = (n, currentDelay) => {
-      fn()
-        .then(resolve)
-        .catch((error) => {
-          if (n <= 0) return reject(error);
-          setTimeout(() => attempt(n - 1, currentDelay * factor), currentDelay);
-        });
-    };
-    attempt(retries, delay);
-  });
-};
-
-const withExponentialBackoff = async (task, options) => {
-  const config = { retries: 3, delay: 500, ...options };
-  try {
-    return await retry(task, config);
-  } catch (err) {
-    console.error(`[automation-tool-43] task failed after ${config.retries} attempts`);
-    throw err;
+const attempt = async (fn, limit = 3, delay = 1000) => {
+  let lastError;
+  for (let i = 0; i < limit; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < limit - 1) {
+        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+      }
+    }
   }
+  throw lastError;
 };
 
-module.exports = { withExponentialBackoff };
+const createPoller = (fn, interval) => {
+  const state = { active: true };
+  const loop = async () => {
+    while (state.active) {
+      try {
+        await fn();
+      } catch (e) {
+        console.error('polling failure:', e);
+      }
+      await new Promise(r => setTimeout(r, interval));
+    }
+  };
+  loop();
+  return { stop: () => { state.active = false; } };
+};
+
+module.exports = { attempt, createPoller };
