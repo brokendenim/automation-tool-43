@@ -1,33 +1,64 @@
-const fs = require('fs');
-const path = require('path');
+const logger = require('./logger');
 
-const Handler = (() => {
-  const _registry = new Map();
-  
-  return {
-    register: (type, fn) => _registry.set(type, fn),
-    execute: (type, payload) => {
-      const task = _registry.get(type);
-      if (!task) throw new Error(`Unknown type: ${type}`);
-      return task(payload);
-    },
-    cleanup: (dir) => {
-      fs.readdir(dir, (err, files) => {
-        if (err) return;
-        files.filter(f => f.endsWith('.tmp')).forEach(f => {
-          fs.unlink(path.join(dir, f), () => {});
-        });
-      });
+class AutomationHandler {
+  #pipeline = new Map();
+  #stats = Symbol('stats');
+
+  constructor() {
+    this[this.#stats] = { executed: 0, purged: 0 };
+    return new Proxy(this, {
+      get: (target, prop) => {
+        if (prop in target || typeof prop === 'symbol') return target[prop];
+        return (fn, opts = {}) => target.register(prop, fn, opts);
+      }
+    });
+  }
+
+  register(name, fn, { priority = 0, ttl = Infinity } = {}) {
+    this.#pipeline.set(String(name), {
+      fn,
+      priority,
+      expiresAt: ttl === Infinity ? Infinity : Date.now() + ttl,
+      runs: 0
+    });
+    return this;
+  }
+
+  async dispatch(context = {}) {
+    this.#purgeStale();
+    const sorted = [...this.#pipeline.entries()]
+      .sort(([, a], [, b]) => b.priority - a.priority);
+
+    const results = [];
+    for (const [name, task] of sorted) {
+      try {
+        const output = await task.fn(context);
+        task.runs++;
+        this[this.#stats].executed++;
+        results.push({ name, status: 'fulfilled', output });
+      } catch (error) {
+        results.push({ name, status: 'rejected', reason: error.message });
+      }
     }
-  };
-})();
+    return results;
+  }
 
-const init = (config) => {
-  Handler.register('process', (data) => {
-    console.log(`Processing: ${JSON.stringify(data)}`);
-    return { status: 'ok', ts: Date.now() };
-  });
-  return Handler;
-};
+  #purgeStale() {
+    const now = Date.now();
+    for (const [name, task] of this.#pipeline.entries()) {
+      if (now > task.expiresAt) {
+        this.#pipeline.delete(name);
+        this[this.#stats].purged++;
+      }
+    }
+  }
 
-module.exports = { init };
+  get metrics() {
+    return {
+      activeTasks: this.#pipeline.size,
+      ...this[this.#stats]
+    };
+  }
+}
+
+module.exports = { AutomationHandler };
