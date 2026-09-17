@@ -1,26 +1,31 @@
 const fs = require('fs');
 const path = require('path');
 
-const LOG_DIR = path.join(__dirname, 'logs');
-const MAX_SIZE = 1024 * 1024;
+const Logger = {
+  level: process.env.LOG_LEVEL || 'info',
+  levels: { debug: 0, info: 1, warn: 2, error: 3 },
+  
+  format: (msg, lvl) => `[${new Date().toISOString()}] [${lvl.toUpperCase()}]: ${JSON.stringify(msg, null, 2)}`,
 
-if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
+  write: (lvl, data) => {
+    if (Logger.levels[lvl] < Logger.levels[Logger.level]) return;
+    const entry = Logger.format(data, lvl);
+    process.stdout.write(entry + '\n');
+    
+    if (lvl === 'error') {
+      fs.appendFileSync(path.join(__dirname, 'error.log'), entry + '\n');
+    }
+  },
 
-const getLogPath = () => path.join(LOG_DIR, 'app.log');
+  debug: (d) => Logger.write('debug', d),
+  info: (d) => Logger.write('info', d),
+  warn: (d) => Logger.write('warn', d),
+  error: (d) => Logger.write('error', d),
 
-const rotate = () => {
-  const logFile = getLogPath();
-  if (fs.existsSync(logFile) && fs.statSync(logFile).size > MAX_SIZE) {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    fs.renameSync(logFile, path.join(LOG_DIR, `app-${timestamp}.log`));
+  tap: (label) => (data) => {
+    Logger.info({ label, data });
+    return data;
   }
 };
 
-const logger = (msg) => {
-  rotate();
-  const entry = `[${new Date().toISOString()}] ${msg}\n`;
-  process.stdout.write(entry);
-  fs.appendFileSync(getLogPath(), entry);
-};
-
-module.exports = { logger };
+module.exports = Logger;
