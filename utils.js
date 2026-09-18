@@ -1,32 +1,33 @@
-const attempt = async (fn, limit = 3, delay = 1000) => {
-  let lastError;
-  for (let i = 0; i < limit; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastError = err;
-      if (i < limit - 1) {
-        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
-      }
-    }
-  }
-  throw lastError;
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
 };
 
-const createPoller = (fn, interval) => {
-  const state = { active: true };
-  const loop = async () => {
-    while (state.active) {
-      try {
-        await fn();
-      } catch (e) {
-        console.error('polling failure:', e);
-      }
-      await new Promise(r => setTimeout(r, interval));
+const batchProcess = (items, processor, chunkSize = 100) => {
+  let index = 0;
+  const runBatch = () => {
+    const end = Math.min(index + chunkSize, items.length);
+    for (; index < end; index++) {
+      processor(items[index]);
+    }
+    if (index < items.length) {
+      setImmediate(runBatch);
     }
   };
-  loop();
-  return { stop: () => { state.active = false; } };
+  runBatch();
 };
 
-module.exports = { attempt, createPoller };
+const fastClone = (obj) => {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(obj);
+  }
+  return JSON.parse(JSON.stringify(obj));
+};
+
+export { memoize, batchProcess, fastClone };
