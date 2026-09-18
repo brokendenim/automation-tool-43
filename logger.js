@@ -1,31 +1,34 @@
 const fs = require('fs');
 const path = require('path');
 
-const Logger = {
-  level: process.env.LOG_LEVEL || 'info',
-  levels: { debug: 0, info: 1, warn: 2, error: 3 },
-  
-  format: (msg, lvl) => `[${new Date().toISOString()}] [${lvl.toUpperCase()}]: ${JSON.stringify(msg, null, 2)}`,
+const logPath = path.join(__dirname, 'automation.log');
 
-  write: (lvl, data) => {
-    if (Logger.levels[lvl] < Logger.levels[Logger.level]) return;
-    const entry = Logger.format(data, lvl);
-    process.stdout.write(entry + '\n');
-    
-    if (lvl === 'error') {
-      fs.appendFileSync(path.join(__dirname, 'error.log'), entry + '\n');
-    }
+const formatter = (level, message) => {
+  const timestamp = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
+  return `[${timestamp}] [${level.toUpperCase()}]: ${message}\n`;
+};
+
+const logger = {
+  info: (msg) => {
+    const entry = formatter('info', msg);
+    process.stdout.write(entry);
+    fs.appendFileSync(logPath, entry);
   },
-
-  debug: (d) => Logger.write('debug', d),
-  info: (d) => Logger.write('info', d),
-  warn: (d) => Logger.write('warn', d),
-  error: (d) => Logger.write('error', d),
-
-  tap: (label) => (data) => {
-    Logger.info({ label, data });
-    return data;
+  warn: (msg) => {
+    const entry = formatter('warn', msg);
+    console.warn(`\x1b[33m${entry}\x1b[0m`);
+    fs.appendFileSync(logPath, entry);
+  },
+  error: (msg, err = '') => {
+    const detail = err ? ` | Detail: ${err.message || err}` : '';
+    const entry = formatter('error', `${msg}${detail}`);
+    console.error(`\x1b[31m${entry}\x1b[0m`);
+    fs.appendFileSync(logPath, entry);
+  },
+  audit: (action, status) => {
+    const entry = formatter('audit', `${action} status=${status}`);
+    fs.appendFileSync(logPath, entry);
   }
 };
 
-module.exports = Logger;
+module.exports = logger;
