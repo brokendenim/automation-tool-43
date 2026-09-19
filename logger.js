@@ -1,27 +1,52 @@
 const fs = require('fs');
-const path = require('path');
 
-const LOG_DIR = './logs';
-const MAX_SIZE = 1024 * 1024 * 5;
-const LOG_FILE = path.join(LOG_DIR, 'app.log');
+class DynamicLogger {
+  constructor(options = {}) {
+    this.outputStream = options.stream || process.stdout;
+    this.history = [];
+    this.maxHistory = options.maxHistory || 100;
 
-if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
+    return new Proxy(this, {
+      get: (target, prop) => {
+        if (prop in target) return target[prop];
 
-const rotate = () => {
-  const timestamp = Date.now();
-  fs.renameSync(LOG_FILE, `${LOG_FILE}.${timestamp}.old`);
-  const archives = fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.old'));
-  if (archives.length > 5) {
-    archives.sort().slice(0, -5).forEach(f => fs.unlinkSync(path.join(LOG_DIR, f)));
+        return (...args) => {
+          const colors = {
+            info: '\x1b[36m',
+            warn: '\x1b[33m',
+            error: '\x1b[31m',
+            success: '\x1b[32m',
+            reset: '\x1b[0m'
+          };
+          const color = colors[prop] || '\x1b[37m';
+          const timestamp = `[${new Date().toISOString()}]`;
+          const tag = prop.toUpperCase().padEnd(7);
+          const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
+
+          const formatted = `${timestamp} ${color}${tag}${colors.reset} ${message}\n`;
+
+          this.history.push({ timestamp, level: prop, message });
+          if (this.history.length > this.maxHistory) {
+            this.history.shift();
+          }
+
+          this.outputStream.write(formatted);
+        };
+      }
+    });
   }
-};
 
-const logger = (msg) => {
-  const entry = `[${new Date().toISOString()}] ${msg}\n`;
-  if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_SIZE) {
-    rotate();
+  flushToDisk(filepath) {
+    try {
+      const dump = JSON.stringify(this.history, null, 2);
+      fs.writeFileSync(filepath, dump, 'utf-8');
+      this.history = [];
+      return true;
+    } catch (err) {
+      process.stderr.write(`Failed to flush log history: ${err.message}\n`);
+      return false;
+    }
   }
-  fs.appendFileSync(LOG_FILE, entry);
-};
+}
 
-module.exports = logger;
+module.exports = new DynamicLogger();
