@@ -1,3 +1,15 @@
+const deepClone = (obj) => {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (obj instanceof Date) return new Date(obj.getTime());
+  const result = Array.isArray(obj) ? [] : {};
+  for (const key of Object.keys(obj)) {
+    result[key] = deepClone(obj[key]);
+  }
+  return result;
+};
+
+const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
+
 const memoize = (fn) => {
   const cache = new Map();
   return (...args) => {
@@ -9,25 +21,18 @@ const memoize = (fn) => {
   };
 };
 
-const batchProcess = (items, processor, chunkSize = 100) => {
-  let index = 0;
-  const runBatch = () => {
-    const end = Math.min(index + chunkSize, items.length);
-    for (; index < end; index++) {
-      processor(items[index]);
-    }
-    if (index < items.length) {
-      setImmediate(runBatch);
+const flatten = (arr) => arr.reduce((acc, val) => 
+  Array.isArray(val) ? acc.concat(flatten(val)) : acc.concat(val), []);
+
+const throttle = (fn, wait) => {
+  let last = 0;
+  return (...args) => {
+    const now = Date.now();
+    if (now - last > wait) {
+      last = now;
+      return fn(...args);
     }
   };
-  runBatch();
 };
 
-const fastClone = (obj) => {
-  if (typeof structuredClone === 'function') {
-    return structuredClone(obj);
-  }
-  return JSON.parse(JSON.stringify(obj));
-};
-
-export { memoize, batchProcess, fastClone };
+module.exports = { deepClone, pipe, memoize, flatten, throttle };
