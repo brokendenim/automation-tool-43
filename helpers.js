@@ -1,34 +1,32 @@
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
+};
 
-const retry = async (fn, options = {}) => {
-  const { attempts = 3, interval = 1000, backoff = 1.5 } = options;
-  let currentAttempt = 0;
-  let currentInterval = interval;
-
-  while (currentAttempt < attempts) {
-    try {
-      return await fn();
-    } catch (error) {
-      currentAttempt++;
-      if (currentAttempt >= attempts) throw error;
-
-      await delay(currentInterval);
-      currentInterval *= backoff;
-    }
+const batchProcess = async (items, processor, concurrency = 3) => {
+  const results = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const chunk = items.slice(i, i + concurrency);
+    results.push(...(await Promise.all(chunk.map(processor))));
   }
+  return results;
 };
 
-const robustFetch = async (url, options = {}) => {
-  return retry(async () => {
-    const response = await fetch(url, options);
-    if (!response.ok) {
-      throw new Error(`HTTP Error: ${response.status}`);
+const deepFreeze = (obj) => {
+  Object.keys(obj).forEach((prop) => {
+    if (typeof obj[prop] === 'object' && obj[prop] !== null) {
+      deepFreeze(obj[prop]);
     }
-    return response.json();
-  }, {
-    attempts: 5,
-    interval: 500
   });
+  return Object.freeze(obj);
 };
 
-module.exports = { retry, robustFetch };
+const getEnvSafe = (key, fallback) => process.env[key] ?? fallback;
+
+export { memoize, batchProcess, deepFreeze, getEnvSafe };
