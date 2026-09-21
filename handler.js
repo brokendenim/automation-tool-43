@@ -1,44 +1,30 @@
-const memoizeCache = new Map();
-const EXPIRY_THRESHOLD = 5000;
-
-function memoizedCompute(fn, key, ttl = EXPIRY_THRESHOLD) {
-  const now = Date.now();
-  const entry = memoizeCache.get(key);
-
-  if (entry && (now - entry.timestamp) < ttl) {
-    return entry.value;
-  }
-
-  const result = fn();
-  memoizeCache.set(key, { value: result, timestamp: now });
-  return result;
-}
-
-function processDataBatch(data) {
-  const results = [];
-  // Use a generator to yield results and prevent block
-  function* engine(items) {
-    for (const item of items) {
-      yield memoizedCompute(() => item * 1.05, `k-${item}`);
+const transform = (input, schema) => {
+  const output = {};
+  const keys = Object.keys(schema);
+  
+  keys.forEach(key => {
+    const path = schema[key].split('.');
+    const value = path.reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : null), input);
+    
+    if (value !== null) {
+      output[key] = typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value;
     }
-  }
+  });
 
-  const iterator = engine(data);
-  let next = iterator.next();
-  while (!next.done) {
-    results.push(next.value);
-    next = iterator.next();
-  }
-
-  return results;
-}
-
-const handler = {
-  execute: (input) => {
-    if (!Array.isArray(input)) return null;
-    return processDataBatch(input);
-  },
-  flush: () => memoizeCache.clear()
+  return new Proxy(output, {
+    get: (target, prop) => {
+      if (prop in target) return target[prop];
+      console.warn(`[automation-tool-43] access to undefined key: ${String(prop)}`);
+      return null;
+    }
+  });
 };
 
-module.exports = handler;
+const sanitize = (data) => {
+  return JSON.stringify(data, (key, value) => {
+    if (typeof value === 'string') return value.replace(/[<>\/]/g, '');
+    return value;
+  });
+};
+
+export { transform, sanitize };
