@@ -1,72 +1,40 @@
-class OptimizedCore {
-  constructor(capacity = 4096) {
-    this.capacity = capacity;
-    this.ringBuffer = new Array(capacity);
-    this.states = new Uint8Array(capacity); // 0: empty, 1: pending, 2: processing
-    this.head = 0;
-    this.tail = 0;
-    this.scheduled = false;
-  }
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
+};
 
-  submit(action, ...payload) {
-    let nextTail = (this.tail + 1) % this.capacity;
-    if (nextTail === this.head) {
-      this._resize();
-      nextTail = (this.tail + 1) % this.capacity;
-    }
-    this.ringBuffer[this.tail] = { action, payload };
-    this.states[this.tail] = 1;
-    this.tail = nextTail;
-    this._tick();
-  }
-
-  _resize() {
-    const oldCap = this.capacity;
-    this.capacity *= 2;
-    const newBuffer = new Array(this.capacity);
-    const newStates = new Uint8Array(this.capacity);
-    let idx = 0;
-    while (this.head !== this.tail) {
-      newBuffer[idx] = this.ringBuffer[this.head];
-      newStates[idx] = this.states[this.head];
-      this.head = (this.head + 1) % oldCap;
-      idx++;
-    }
-    this.ringBuffer = newBuffer;
-    this.states = newStates;
-    this.head = 0;
-    this.tail = idx;
-  }
-
-  _tick() {
-    if (this.scheduled) return;
-    this.scheduled = true;
-    queueMicrotask(() => {
-      const start = performance.now();
-      while (this.head !== this.tail) {
-        if (performance.now() - start > 8) {
-          this.scheduled = false;
-          this._tick();
-          return;
-        }
-        const current = this.head;
-        this.head = (this.head + 1) % this.capacity;
-        if (this.states[current] === 1) {
-          this.states[current] = 2;
-          try {
-            const item = this.ringBuffer[current];
-            if (item) item.action(...item.payload);
-          } catch (err) {
-            // Supressed downstream failures
-          } finally {
-            this.ringBuffer[current] = null;
-            this.states[current] = 0;
-          }
-        }
+const performanceWrapper = {
+  batchProcessor: (tasks, chunkSize = 100) => {
+    let index = 0;
+    const run = () => {
+      const end = Math.min(index + chunkSize, tasks.length);
+      for (let i = index; i < end; i++) {
+        try { tasks[i](); } catch (e) { console.error('Task failed', e); }
       }
-      this.scheduled = false;
-    });
+      index = end;
+      if (index < tasks.length) {
+        setTimeout(run, 0);
+      }
+    };
+    run();
+  },
+  lazyValue: (getter) => {
+    let value;
+    let initialized = false;
+    return () => {
+      if (!initialized) {
+        value = getter();
+        initialized = true;
+      }
+      return value;
+    };
   }
-}
+};
 
-module.exports = { OptimizedCore };
+module.exports = { memoize, performanceWrapper };
