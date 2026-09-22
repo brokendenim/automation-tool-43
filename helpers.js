@@ -9,24 +9,22 @@ const memoize = (fn) => {
   };
 };
 
-const batchProcess = async (items, processor, concurrency = 3) => {
-  const results = [];
-  for (let i = 0; i < items.length; i += concurrency) {
-    const chunk = items.slice(i, i + concurrency);
-    results.push(...(await Promise.all(chunk.map(processor))));
-  }
-  return results;
+const pipeline = (...fns) => (initial) => fns.reduce((val, fn) => fn(val), initial);
+
+const flattenDeep = (arr) => arr.reduce((acc, val) => 
+  Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
+
+const debounce = (fn, delay) => {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
 };
 
-const deepFreeze = (obj) => {
-  Object.keys(obj).forEach((prop) => {
-    if (typeof obj[prop] === 'object' && obj[prop] !== null) {
-      deepFreeze(obj[prop]);
-    }
-  });
-  return Object.freeze(obj);
+const getNested = (obj, path, fallback = null) => {
+  const keys = path.split('.');
+  return keys.reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : fallback), obj);
 };
 
-const getEnvSafe = (key, fallback) => process.env[key] ?? fallback;
-
-export { memoize, batchProcess, deepFreeze, getEnvSafe };
+export { memoize, pipeline, flattenDeep, debounce, getNested };
