@@ -1,38 +1,30 @@
-const deepClone = (obj) => {
-  if (obj === null || typeof obj !== 'object') return obj;
-  if (obj instanceof Date) return new Date(obj.getTime());
-  const result = Array.isArray(obj) ? [] : {};
-  for (const key of Object.keys(obj)) {
-    result[key] = deepClone(obj[key]);
-  }
-  return result;
+const retry = (fn, { retries = 3, delay = 1000 } = {}) => {
+  return new Promise((resolve, reject) => {
+    const attempt = (n) => {
+      fn()
+        .then(resolve)
+        .catch((err) => {
+          if (n <= 0) return reject(err);
+          const jitter = Math.random() * 200;
+          setTimeout(() => attempt(n - 1), delay + jitter);
+        });
+    };
+    attempt(retries);
+  });
 };
 
-const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
-
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
+const asyncGuard = (task, timeout = 5000) => {
+  return Promise.race([
+    task(),
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Operation timeout')), timeout)
+    )
+  ]);
 };
 
-const flatten = (arr) => arr.reduce((acc, val) => 
-  Array.isArray(val) ? acc.concat(flatten(val)) : acc.concat(val), []);
-
-const throttle = (fn, wait) => {
-  let last = 0;
-  return (...args) => {
-    const now = Date.now();
-    if (now - last > wait) {
-      last = now;
-      return fn(...args);
-    }
-  };
+const executeNetworkOp = async (operation, options) => {
+  const wrapped = () => asyncGuard(operation, options.timeout);
+  return await retry(wrapped, options);
 };
 
-module.exports = { deepClone, pipe, memoize, flatten, throttle };
+module.exports = { retry, asyncGuard, executeNetworkOp };
