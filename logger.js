@@ -1,61 +1,49 @@
 const fs = require('fs');
-const path = require('path');
-const { EventEmitter } = require('events');
 
-class RotatingLogger extends EventEmitter {
-  constructor(options = {}) {
-    super();
-    this.dir = options.dir || './logs';
-    this.maxBytes = options.maxBytes || 1024 * 10;
-    this.maxFiles = options.maxFiles || 5;
-    this.currentSize = 0;
-    this.activeStream = null;
-
-    if (!fs.existsSync(this.dir)) fs.mkdirSync(this.dir, { recursive: true });
-    this._rotateStream();
+class RotatingStream {
+  constructor(filepath, limit = 5000) {
+    this.filepath = filepath;
+    this.limit = limit;
+    this.size = 0;
+    this.init();
   }
 
-  _rotateStream() {
-    if (this.activeStream) this.activeStream.end();
-    
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const logPath = path.join(this.dir, `app-${stamp}.log`);
-    this.activeStream = fs.createWriteStream(logPath, { flags: 'a' });
-    this.currentSize = 0;
-    this._purgeExcessLogs();
-  }
-
-  _purgeExcessLogs() {
-    const files = fs.readdirSync(this.dir)
-      .filter(f => f.startsWith('app-') && f.endsWith('.log'))
-      .map(f => ({ name: f, time: fs.statSync(path.join(this.dir, f)).mtimeMs }))
-      .sort((a, b) => b.time - a.time);
-
-    files.slice(this.maxFiles).forEach(file => {
-      fs.unlinkSync(path.join(this.dir, file.name));
-    });
-  }
-
-  log(level, message, meta = {}) {
-    const payload = JSON.stringify({ time: new Date().toISOString(), level: level.toUpperCase(), message, ...meta }) + '\n';
-    const bytes = Buffer.byteLength(payload);
-    if (this.currentSize + bytes > this.maxBytes) {
-      this._rotateStream();
+  init() {
+    if (fs.existsSync(this.filepath)) {
+      this.size = fs.statSync(this.filepath).size;
     }
-    this.activeStream.write(payload);
-    this.currentSize += bytes;
-    this.emit('log', { level, message, bytes });
+  }
+
+  write(message) {
+    const payload = Buffer.from(message);
+    if (this.size + payload.length > this.limit) {
+      this.rotate();
+    }
+    fs.appendFileSync(this.filepath, payload);
+    this.size += payload.length;
+  }
+
+  rotate() {
+    const backupPath = `${this.filepath}.${Date.now()}.log`;
+    if (fs.existsSync(this.filepath)) {
+      fs.renameSync(this.filepath, backupPath);
+    }
+    this.size = 0;
   }
 }
 
-const createLogger = (opts) => {
-  const instance = new RotatingLogger(opts);
-  return new Proxy(instance, {
-    get(target, prop) {
-      if (prop in target) return typeof target[prop] === 'function' ? target[prop].bind(target) : target[prop];
-      return (msg, meta) => target.log(prop, msg, meta);
+function setupLogger(filepath, limit) {
+  const rotater = new RotatingStream(filepath, limit);
+  return new Proxy({}, {
+    get(_, level) {
+      return (...args) => {
+        const timestamp = new Date().toISOString();
+        const payload = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+        const logLine = `[${timestamp}] [${level.toUpperCase()}] ${payload}\n`;
+        rotater.write(logLine);
+      };
     }
   });
-};
+}
 
-module.exports = { createLogger };
+module.exports = { setupLogger };
