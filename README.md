@@ -1,58 +1,55 @@
 # automation-tool-43
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-A lightweight, asynchronous task runner designed to streamline repetitive local workflows and file processing routines. Built on Node.js, it combines time-based triggers with declarative pipelines to automate daily development overhead without complex configuration.
+A robust, modular JavaScript utility designed to streamline repetitive task execution across local development environments. It reduces manual overhead by orchestrating CLI workflows and file system operations through a unified, asynchronous engine.
 
 ## Features
 
-- **Event-Driven Pipelines:** Chain file transformations, network requests, and system commands using simple JavaScript functions.
-- **Flexible Triggers:** Execute workflows on cron schedules, file system changes, or manual CLI invocations.
-- **Zero-Dependency Core:** Highly optimized execution runtime ensuring fast startup times and low memory consumption.
-- **Structured JSON Logging:** Built-in logging format compatible with standard log collectors and terminal outputs.
+*   **Task Chaining:** Define complex dependencies and execute sequences of shell commands with built-in error handling and status logging.
+*   **File Watcher:** Automatically triggers specific scripts upon file change events, optimized for low CPU overhead using persistent polling.
+*   **Environment Injection:** Seamlessly loads and manages environment variables from local `.env` files to ensure consistent configuration across build stages.
+*   **Custom Hook System:** Extend the tool's functionality with lifecycle hooks that trigger custom JavaScript logic before or after task completion.
 
 ## Installation
 
-Install the package via npm:
-
-```bash
-npm install automation-tool-43
-```
-
-To use the command-line interface globally:
+Ensure you have [Node.js](https://nodejs.org/) installed (v16+ recommended). Install the package globally via npm:
 
 ```bash
 npm install -g automation-tool-43
 ```
 
-## Quick Start
-
-Create an `automation.js` file to define and start your automated tasks:
-
-```javascript
-const { Pipeline, triggers } = require('automation-tool-43');
-
-const runner = new Pipeline();
-
-// Register a scheduled file cleanup task
-runner.register('clean-temp-files', {
-  trigger: triggers.cron('0 0 * * *'), // Runs daily at midnight
-  async execute() {
-    console.log('Cleaning temporary directory...');
-    // Automation logic goes here
-  }
-});
-
-// Start listening for triggers
-runner.start();
-```
-
-Run your script using Node.js:
+Alternatively, add it as a project dependency:
 
 ```bash
-node automation.js
+npm install --save-dev automation-tool-43
+```
+
+## Usage
+
+Initialize the tool in your project directory to generate the default configuration file:
+
+```bash
+at43 init
+```
+
+Define your workflow in the generated `tasks.config.js` file, then trigger your automation:
+
+```javascript
+// tasks.config.js example
+module.exports = {
+  tasks: {
+    deploy: ['npm run build', 'rsync -av ./dist/ server:/var/www/']
+  }
+};
+```
+
+Run your configured tasks from the terminal:
+
+```bash
+at43 run deploy
 ```
 
 ## License
 
-Distributed under the MIT License. See `LICENSE` for details.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
