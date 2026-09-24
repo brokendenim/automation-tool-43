@@ -9,22 +9,33 @@ const memoize = (fn) => {
   };
 };
 
-const pipeline = (...fns) => (initial) => fns.reduce((val, fn) => fn(val), initial);
+const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
 
-const flattenDeep = (arr) => arr.reduce((acc, val) => 
-  Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
+const ensureDir = (fs, path) => {
+  if (!fs.existsSync(path)) {
+    fs.mkdirSync(path, { recursive: true });
+  }
+};
 
-const debounce = (fn, delay) => {
-  let timeoutId;
-  return (...args) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), delay);
+const slugify = (str) => 
+  str.toString().toLowerCase().trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-');
+
+const taskScheduler = (tasks) => {
+  const queue = [...tasks];
+  const execute = async () => {
+    while (queue.length > 0) {
+      const task = queue.shift();
+      try {
+        await task();
+      } catch (err) {
+        console.error('Task failed, skipping:', err);
+      }
+    }
   };
+  return { execute };
 };
 
-const getNested = (obj, path, fallback = null) => {
-  const keys = path.split('.');
-  return keys.reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : fallback), obj);
-};
-
-export { memoize, pipeline, flattenDeep, debounce, getNested };
+export { memoize, pipe, ensureDir, slugify, taskScheduler };
