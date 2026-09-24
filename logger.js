@@ -1,49 +1,22 @@
-const fs = require('fs');
+const LEVELS = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
+const currentLevel = process.env.LOG_LEVEL || 'INFO';
 
-class RotatingStream {
-  constructor(filepath, limit = 5000) {
-    this.filepath = filepath;
-    this.limit = limit;
-    this.size = 0;
-    this.init();
-  }
+const format = (lvl, msg) => `[${new Date().toISOString()}] ${lvl}: ${msg}`;
 
-  init() {
-    if (fs.existsSync(this.filepath)) {
-      this.size = fs.statSync(this.filepath).size;
+const logger = Object.keys(LEVELS).reduce((acc, key) => {
+  acc[key.toLowerCase()] = (msg) => {
+    if (LEVELS[key] >= LEVELS[currentLevel]) {
+      process.stdout.write(format(key, msg) + '\n');
     }
-  }
+  };
+  return acc;
+}, {});
 
-  write(message) {
-    const payload = Buffer.from(message);
-    if (this.size + payload.length > this.limit) {
-      this.rotate();
-    }
-    fs.appendFileSync(this.filepath, payload);
-    this.size += payload.length;
-  }
+const pipe = (fn, ...args) => (...extras) => fn(...args, ...extras);
 
-  rotate() {
-    const backupPath = `${this.filepath}.${Date.now()}.log`;
-    if (fs.existsSync(this.filepath)) {
-      fs.renameSync(this.filepath, backupPath);
-    }
-    this.size = 0;
-  }
-}
+const createScopedLogger = (scope) => ({
+  info: pipe(logger.info, `(${scope})`), 
+  error: pipe(logger.error, `(${scope})`)
+});
 
-function setupLogger(filepath, limit) {
-  const rotater = new RotatingStream(filepath, limit);
-  return new Proxy({}, {
-    get(_, level) {
-      return (...args) => {
-        const timestamp = new Date().toISOString();
-        const payload = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
-        const logLine = `[${timestamp}] [${level.toUpperCase()}] ${payload}\n`;
-        rotater.write(logLine);
-      };
-    }
-  });
-}
-
-module.exports = { setupLogger };
+module.exports = { ...logger, createScopedLogger };
