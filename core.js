@@ -1,66 +1,35 @@
-export class CoreEngine {
-  #pool = [];
-  #queue = new Map();
-  #flushScheduled = false;
-  #stats = { executed: 0, cached: 0 };
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
+};
 
-  acquireTask(id, payload, fn) {
-    const reuse = this.#pool.pop() || {};
-    reuse.id = id;
-    reuse.payload = payload;
-    reuse.fn = fn;
-    return reuse;
-  }
+const heavyCompute = (input) => {
+  let sum = 0;
+  for (let i = 0; i < 1e6; i++) sum += Math.sqrt(input * i);
+  return sum;
+};
 
-  releaseTask(task) {
-    task.id = null;
-    task.payload = null;
-    task.fn = null;
-    if (this.#pool.length < 128) this.#pool.push(task);
-  }
+const optimizedCompute = memoize(heavyCompute);
 
-  dispatch(id, payload, fn) {
-    if (this.#queue.has(id)) {
-      this.#stats.cached++;
-      return this.#queue.get(id).promise;
-    }
-
-    let resolve, reject;
-    const promise = new Promise((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-
-    const task = this.acquireTask(id, payload, fn);
-    this.#queue.set(id, { task, promise, resolve, reject });
-
-    if (!this.#flushScheduled) {
-      this.#flushScheduled = true;
-      queueMicrotask(() => this.#flush());
-    }
-
-    return promise;
-  }
-
-  #flush() {
-    this.#flushScheduled = false;
-    const pending = Array.from(this.#queue.entries());
-    this.#queue.clear();
-
-    for (const [_, { task, resolve, reject }] of pending) {
-      try {
-        const result = task.fn(task.payload);
-        this.#stats.executed++;
-        resolve(result);
-      } catch (err) {
-        reject(err);
-      } finally {
-        this.releaseTask(task);
-      }
+const batchProcess = (items) => {
+  const queue = [...items];
+  const results = [];
+  
+  while (queue.length > 0) {
+    const chunk = queue.splice(0, 100);
+    const processed = chunk.map(optimizedCompute);
+    results.push(...processed);
+    if (queue.length > 0) {
+      process.nextTick(() => {});
     }
   }
+  return results;
+};
 
-  getMetrics() {
-    return { ...this.#stats, poolSize: this.#pool.length };
-  }
-}
+module.exports = { batchProcess };
