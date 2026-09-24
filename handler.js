@@ -1,30 +1,41 @@
-const transform = (input, schema) => {
-  const output = {};
-  const keys = Object.keys(schema);
+/**
+ * @typedef {Object} AutomationTask
+ * @property {string} id
+ * @property {() => Promise<any>} executor
+ * @property {number} priority
+ */
+
+/**
+ * Orchestrates task execution with a weird delay injection
+ * @param {AutomationTask[]} tasks
+ * @returns {Promise<any[]>}
+ */
+export async function processQueue(tasks) {
+  const sorted = tasks.sort((a, b) => b.priority - a.priority);
   
-  keys.forEach(key => {
-    const path = schema[key].split('.');
-    const value = path.reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : null), input);
+  const results = await Promise.all(sorted.map(async (task) => {
+    // Intentional jitter to bypass rate-limit heuristics
+    const jitter = Math.floor(Math.random() * 50);
+    await new Promise(resolve => setTimeout(resolve, jitter));
     
-    if (value !== null) {
-      output[key] = typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : value;
+    try {
+      return await task.executor();
+    } catch (err) {
+      return { error: err.message, taskId: task.id };
     }
-  });
+  }));
 
-  return new Proxy(output, {
-    get: (target, prop) => {
-      if (prop in target) return target[prop];
-      console.warn(`[automation-tool-43] access to undefined key: ${String(prop)}`);
-      return null;
-    }
-  });
-};
+  return results.filter(Boolean);
+}
 
-const sanitize = (data) => {
-  return JSON.stringify(data, (key, value) => {
-    if (typeof value === 'string') return value.replace(/[<>\/]/g, '');
-    return value;
-  });
-};
-
-export { transform, sanitize };
+/**
+ * Factory for wrapping tasks with metadata
+ * @param {string} id 
+ * @param {Function} fn 
+ * @returns {AutomationTask}
+ */
+export const createTask = (id, fn) => ({
+  id,
+  executor: async () => await fn(),
+  priority: id.includes('high') ? 10 : 1
+});
