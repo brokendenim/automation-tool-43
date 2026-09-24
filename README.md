@@ -1,47 +1,58 @@
 # automation-tool-43
 
-Automation-tool-43 is a lightweight, Node.js-based utility designed to streamline repetitive task execution across local development environments. It provides a robust engine for scheduling, file manipulation, and process monitoring without the overhead of heavy workflow managers.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A lightweight, asynchronous task runner designed to streamline repetitive local workflows and file processing routines. Built on Node.js, it combines time-based triggers with declarative pipelines to automate daily development overhead without complex configuration.
 
 ## Features
 
-*   **Task Scheduling:** Execute complex script chains based on cron expressions or interval-based triggers.
-*   **File System Watcher:** Automatically trigger defined callbacks when specific files or directories undergo changes.
-*   **Process Orchestrator:** Manage multiple child processes concurrently with built-in logging and automatic restart policies.
-*   **Environment Integration:** Native support for `.env` file injection, ensuring secure configuration management across development and staging environments.
+- **Event-Driven Pipelines:** Chain file transformations, network requests, and system commands using simple JavaScript functions.
+- **Flexible Triggers:** Execute workflows on cron schedules, file system changes, or manual CLI invocations.
+- **Zero-Dependency Core:** Highly optimized execution runtime ensuring fast startup times and low memory consumption.
+- **Structured JSON Logging:** Built-in logging format compatible with standard log collectors and terminal outputs.
 
 ## Installation
 
-Ensure you have [Node.js](https://nodejs.org/) (v16+) installed. Run the following command in your project root:
+Install the package via npm:
 
 ```bash
 npm install automation-tool-43
 ```
 
-## Usage
-
-Create an `automation.config.js` file to define your tasks, then execute them using the CLI:
-
-```javascript
-// automation.config.js
-module.exports = {
-  tasks: [
-    {
-      name: 'cleanup-logs',
-      pattern: '*/logs/*.log',
-      action: () => console.log('Cleaning logs...')
-    }
-  ]
-};
-```
-
-Run the tool to start the monitor:
+To use the command-line interface globally:
 
 ```bash
-npx automation-tool-43 start --config automation.config.js
+npm install -g automation-tool-43
+```
+
+## Quick Start
+
+Create an `automation.js` file to define and start your automated tasks:
+
+```javascript
+const { Pipeline, triggers } = require('automation-tool-43');
+
+const runner = new Pipeline();
+
+// Register a scheduled file cleanup task
+runner.register('clean-temp-files', {
+  trigger: triggers.cron('0 0 * * *'), // Runs daily at midnight
+  async execute() {
+    console.log('Cleaning temporary directory...');
+    // Automation logic goes here
+  }
+});
+
+// Start listening for triggers
+runner.start();
+```
+
+Run your script using Node.js:
+
+```bash
+node automation.js
 ```
 
 ## License
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-
-Distributed under the MIT License. See `LICENSE` for more information.
+Distributed under the MIT License. See `LICENSE` for details.
