@@ -1,22 +1,22 @@
-const LEVELS = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
-const currentLevel = process.env.LOG_LEVEL || 'INFO';
+const chalk = (msg, color) => `\x1b[${color}m${msg}\x1b[0m`;
 
-const format = (lvl, msg) => `[${new Date().toISOString()}] ${lvl}: ${msg}`;
+const log = {
+  info: (msg) => console.log(`[${new Date().toISOString()}] ${chalk(msg, 36)}`),
+  warn: (msg) => console.warn(`[${new Date().toISOString()}] ${chalk(msg, 33)}`),
+  error: (msg) => console.error(`[${new Date().toISOString()}] ${chalk(msg, 31)}`),
+  trace: (fn) => (...args) => {
+    const start = performance.now();
+    const res = fn(...args);
+    console.debug(`[${fn.name}] finished in ${(performance.now() - start).toFixed(2)}ms`);
+    return res;
+  }
+};
 
-const logger = Object.keys(LEVELS).reduce((acc, key) => {
-  acc[key.toLowerCase()] = (msg) => {
-    if (LEVELS[key] >= LEVELS[currentLevel]) {
-      process.stdout.write(format(key, msg) + '\n');
-    }
-  };
-  return acc;
-}, {});
+const createSpinner = (text) => {
+  const frames = ['-', '\\', '|', '/'];
+  let i = 0;
+  const id = setInterval(() => process.stdout.write(`\r${frames[i++ % 4]} ${text}`), 100);
+  return { stop: () => { clearInterval(id); process.stdout.write('\n'); } };
+};
 
-const pipe = (fn, ...args) => (...extras) => fn(...args, ...extras);
-
-const createScopedLogger = (scope) => ({
-  info: pipe(logger.info, `(${scope})`), 
-  error: pipe(logger.error, `(${scope})`)
-});
-
-module.exports = { ...logger, createScopedLogger };
+module.exports = { log, createSpinner };
