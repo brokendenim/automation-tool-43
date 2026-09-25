@@ -10,13 +10,15 @@ const deepMerge = (target, source) => {
   return { ...target, ...source };
 };
 
-const loadConfig = (userPath, defaults) => {
+const loadConfig = (filePath, defaults = {}) => {
   try {
-    const fullPath = path.resolve(process.cwd(), userPath);
-    const customConfig = fs.existsSync(fullPath) 
-      ? JSON.parse(fs.readFileSync(fullPath, 'utf8')) 
-      : {};
-    return deepMerge(defaults, customConfig);
+    const absolutePath = path.resolve(process.cwd(), filePath);
+    if (!fs.existsSync(absolutePath)) return defaults;
+    
+    const fileContent = fs.readFileSync(absolutePath, 'utf-8');
+    const userConfig = JSON.parse(fileContent);
+    
+    return deepMerge(defaults, userConfig);
   } catch (err) {
     return defaults;
   }
