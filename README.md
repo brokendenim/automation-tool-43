@@ -1,59 +1,54 @@
 # automation-tool-43
 
-`automation-tool-43` is a lightweight, high-performance Node.js utility designed to streamline repetitive task execution across local development environments. It provides a robust command-line interface to orchestrate file system operations, API polling, and process monitoring with minimal configuration.
+`automation-tool-43` is a lightweight, high-performance JavaScript utility designed to streamline repetitive terminal-based workflows. It provides a robust framework for automating file system operations and remote process execution with minimal configuration.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
 
-*   **Task Scheduling:** Execute complex shell commands or JavaScript functions on a recurring interval using a cron-like syntax.
-*   **Watch Mode:** Automatically trigger predefined workflows when specific file patterns are updated within your project directory.
-*   **Result Logging:** Built-in output buffering that captures execution logs into structured JSON files for audit and debugging purposes.
-*   **Zero-Dependency Core:** Optimized for speed, the tool relies on a modular architecture that keeps your dependency tree lean and secure.
+*   **Task Chaining:** Execute sequences of CLI commands asynchronously with built-in error handling and status reporting.
+*   **Dynamic File Watcher:** Automatically triggers predefined scripts upon changes to specific directories or file patterns.
+*   **Environment-Aware Config:** Seamlessly handles local and production environment variables using native `.env` integration.
+*   **Zero-Dependency Core:** Built using standard Node.js libraries to ensure a small footprint and high security posture.
 
 ## Installation
 
-Ensure you have Node.js (v16.0.0 or higher) installed. Install the package globally via npm:
+Ensure you have [Node.js](https://nodejs.org/) (v16+) installed. Install the package globally via npm:
 
 ```bash
 npm install -g automation-tool-43
 ```
 
-Alternatively, add it to your project as a dev dependency:
+Alternatively, add it to your project as a development dependency:
 
 ```bash
 npm install --save-dev automation-tool-43
 ```
 
-## Basic Usage
+## Usage
 
-Create an `automation.config.js` file in your root directory to define your tasks, then execute the tool:
+Create an `auto-config.js` file in your root directory to define your tasks:
 
 ```javascript
-// automation.config.js
-module.exports = {
-  tasks: [
-    {
-      name: 'cleanup-logs',
-      pattern: 'src/**/*.log',
-      action: () => console.log('Cleaning logs...')
-    }
-  ]
-};
+const runner = require('automation-tool-43');
+
+runner.task('build', async () => {
+  await runner.exec('npm run clean');
+  await runner.exec('webpack --mode production');
+  console.log('Build complete!');
+});
 ```
 
-Run the tool using the CLI:
+Run your defined task from the terminal:
 
 ```bash
-auto43 --config automation.config.js
+auto-tool run build
 ```
 
-For a one-time execution of a specific task defined in your configuration:
+## Contributing
 
-```bash
-auto43 run cleanup-logs
-```
+Contributions are welcome! Please open an issue to discuss proposed changes or submit a pull request for bug fixes. Ensure all new code adheres to the existing project structure and includes relevant tests.
 
 ## License
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-
-Distributed under the MIT License. See `LICENSE` for more information.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
