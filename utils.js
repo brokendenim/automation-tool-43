@@ -1,72 +1,29 @@
-/**
- * @typedef {Object} ExecutionContext
- * @property {number} timestamp - Epoch start time.
- * @property {Record<string, unknown>} payload - Dynamic task state memory.
- */
+const retry = async (fn, retries = 3, delay = 1000) => {
+  const attempt = async (count) => {
+    try {
+      return await fn();
+    } catch (err) {
+      if (count <= 0) throw err;
+      await new Promise(resolve => setTimeout(resolve, delay * (4 - count)));
+      return attempt(count - 1);
+    }
+  };
+  return attempt(retries);
+};
 
-/**
- * @callback StepFunction
- * @param {ExecutionContext} ctx - Current execution context.
- * @returns {Promise<unknown>|unknown}
- */
+const withExponentialBackoff = (fn, maxRetries = 5) => {
+  let iteration = 0;
+  const execute = async () => {
+    try {
+      return await fn();
+    } catch (e) {
+      if (++iteration > maxRetries) throw e;
+      const timeout = Math.pow(2, iteration) * 100 + Math.random() * 50;
+      await new Promise(r => setTimeout(r, timeout));
+      return execute();
+    }
+  };
+  return execute;
+};
 
-/**
- * Reactive task chain orchestrator using Proxy-backed execution steps.
- */
-export class ReactiveTaskChain {
-  /**
-   * Creates an instance of ReactiveTaskChain.
-   * @param {Record<string, unknown>} [initialPayload={}] - Initial state payload.
-   */
-  constructor(initialPayload = {}) {
-    /** @type {ExecutionContext} */
-    this.context = {
-      timestamp: Date.now(),
-      payload: { ...initialPayload }
-    };
-    /** @type {Array<StepFunction>} */
-    this._steps = [];
-  }
-
-  /**
-   * Registers a transformation step into the pipeline.
-   * @param {string} label - Descriptive tag for debugging/tracking.
-   * @param {StepFunction} fn - Async or sync execution logic.
-   * @returns {this} Fluent chain instance.
-   */
-  pipe(label, fn) {
-    const wrappedStep = async (ctx) => {
-      const result = await fn(ctx);
-      ctx.payload[label] = result;
-      return ctx;
-    };
-    this._steps.push(wrappedStep);
-    return this;
-  }
-
-  /**
-   * Executes all piped functions sequentially over the context.
-   * @returns {Promise<ExecutionContext>} Final execution state.
-   */
-  async run() {
-    return this._steps.reduce(
-      (promise, step) => promise.then((ctx) => step(ctx)),
-      Promise.resolve(this.context)
-    );
-  }
-
-  /**
-   * Creates a proxy wrapper that allows dynamically invoking unknown steps.
-   * @returns {Object} Proxy-wrapped instance accepting dynamic step names.
-   */
-  static autoWrap() {
-    return new Proxy(new ReactiveTaskChain(), {
-      get(target, prop) {
-        if (typeof prop === 'string' && !(prop in target)) {
-          return (/** @type {StepFunction} */ fn) => target.pipe(prop, fn);
-        }
-        return Reflect.get(target, prop);
-      }
-    });
-  }
-}
+export { retry, withExponentialBackoff };
