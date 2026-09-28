@@ -1,30 +1,31 @@
-const validateInput = (input) => {
-  const rules = {
-    id: (v) => typeof v === 'number' && v > 0,
-    data: (v) => Array.isArray(v) && v.length > 0,
-    tag: (v) => typeof v === 'string' && v.length < 20
-  };
+const fs = require('fs');
+const path = require('path');
 
-  return Object.keys(rules).every(key => 
-    Object.prototype.hasOwnProperty.call(input, key) && rules[key](input[key])
-  );
+const LOG_FILE = path.join(__dirname, 'automation.log');
+
+const format = (lvl, msg) => {
+  const ts = new Date().toISOString();
+  return `[${ts}] [${lvl.toUpperCase()}]: ${msg}`;
 };
 
-const processBatch = (items) => {
-  const log = [];
-  for (const item of items) {
-    try {
-      if (!validateInput(item)) {
-        throw new Error(`invalid payload structure: ${JSON.stringify(item)}`);
-      }
-      const entry = `[${new Date().toISOString()}] processing ${item.id}`;
-      log.push(entry);
-      console.log(entry);
-    } catch (err) {
-      console.error(`skipped item: ${err.message}`);
-    }
-  }
-  return log;
+const stream = (lvl, msg) => {
+  const line = format(lvl, msg);
+  process.stdout.write(line + '\n');
+  fs.appendFile(LOG_FILE, line + '\n', (err) => {
+    if (err) console.error('Logging failure:', err);
+  });
 };
 
-module.exports = { processBatch };
+const logger = {
+  info: (msg) => stream('info', msg),
+  warn: (msg) => stream('warn', msg),
+  error: (msg) => stream('error', msg),
+  trace: (val) => {
+    const stack = new Error().stack.split('\n')[2];
+    stream('trace', `${JSON.stringify(val)} at ${stack.trim()}`);
+  },
+  // Unconventional: quick heartbeat to verify logs
+  pulse: () => stream('debug', 'heartbeat signal active')
+};
+
+module.exports = logger;
