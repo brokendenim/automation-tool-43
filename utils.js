@@ -1,29 +1,50 @@
-const retry = async (fn, retries = 3, delay = 1000) => {
-  const attempt = async (count) => {
-    try {
-      return await fn();
-    } catch (err) {
-      if (count <= 0) throw err;
-      await new Promise(resolve => setTimeout(resolve, delay * (4 - count)));
-      return attempt(count - 1);
-    }
-  };
-  return attempt(retries);
-};
+function* fibonacciJitterGenerator(maxRetries) {
+  let a = 1, b = 1;
+  for (let i = 0; i < maxRetries; i++) {
+    const jitter = Math.random() * 0.3 + 0.85;
+    yield Math.floor(a * 100 * jitter);
+    [a, b] = [b, a + b];
+  }
+}
 
-const withExponentialBackoff = (fn, maxRetries = 5) => {
-  let iteration = 0;
-  const execute = async () => {
-    try {
-      return await fn();
-    } catch (e) {
-      if (++iteration > maxRetries) throw e;
-      const timeout = Math.pow(2, iteration) * 100 + Math.random() * 50;
-      await new Promise(r => setTimeout(r, timeout));
-      return execute();
-    }
-  };
-  return execute;
-};
+async function withResilientRetry(fn, options = {}) {
+  const {
+    maxRetries = 5,
+    shouldRetry = (err) => err?.status !== 404,
+    onRetry = () => {}
+  } = options;
 
-export { retry, withExponentialBackoff };
+  const delayGen = fibonacciJitterGenerator(maxRetries);
+  let attempt = 0;
+
+  while (true) {
+    try {
+      return await fn({ attempt });
+    } catch (error) {
+      attempt++;
+      const nextDelay = delayGen.next();
+
+      if (nextDelay.done || !shouldRetry(error)) {
+        throw error;
+      }
+
+      const delayMs = nextDelay.value;
+      onRetry(error, attempt, delayMs);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
+function createRetryProxy(targetObj, methodNames, retryOptions = {}) {
+  return new Proxy(targetObj, {
+    get(target, prop, receiver) {
+      const origMethod = Reflect.get(target, prop, receiver);
+      if (typeof origMethod === 'function' && methodNames.includes(prop)) {
+        return (...args) => withResilientRetry(() => origMethod.apply(target, args), retryOptions);
+      }
+      return origMethod;
+    }
+  });
+}
+
+module.exports = { withResilientRetry, createRetryProxy };
