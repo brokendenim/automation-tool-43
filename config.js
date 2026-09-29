@@ -1,26 +1,38 @@
-const fs = require('fs');
-const path = require('path');
+const env = process.env.NODE_ENV || 'development';
 
-const deepMerge = (target, source) => {
-  for (const key of Object.keys(source)) {
-    if (source[key] instanceof Object && key in target) {
-      Object.assign(source[key], deepMerge(target[key], source[key]));
-    }
-  }
-  return { ...target, ...source };
+const defaults = {
+  timeout: 5000,
+  retries: 3,
+  cache: true
 };
 
-const loadConfig = (userPath, defaults = {}) => {
-  try {
-    const configPath = path.resolve(process.cwd(), userPath);
-    const fileData = fs.existsSync(configPath) 
-      ? JSON.parse(fs.readFileSync(configPath, 'utf8')) 
-      : {};
-    return deepMerge(defaults, fileData);
-  } catch (err) {
-    console.error('Configuration parsing failure:', err.message);
-    return defaults;
+const configurations = {
+  development: {
+    ...defaults,
+    logLevel: 'debug',
+    apiBase: 'http://localhost:3000'
+  },
+  production: {
+    ...defaults,
+    timeout: 10000,
+    retries: 5,
+    logLevel: 'warn',
+    apiBase: 'https://api.automation.prod'
   }
 };
 
-module.exports = { loadConfig };
+const getConfig = (key) => {
+  const config = configurations[env] || configurations.development;
+  return key ? config[key] : config;
+};
+
+const mergeSettings = (custom) => {
+  const base = getConfig();
+  return Object.assign(Object.create(null), base, custom);
+};
+
+module.exports = {
+  env,
+  getConfig,
+  mergeSettings
+};
