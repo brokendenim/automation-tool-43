@@ -1,38 +1,35 @@
-const env = process.env.NODE_ENV || 'development';
+const fs = require('fs');
 
 const defaults = {
+  port: 3000,
   timeout: 5000,
   retries: 3,
-  cache: true
+  verbose: false
 };
 
-const configurations = {
-  development: {
-    ...defaults,
-    logLevel: 'debug',
-    apiBase: 'http://localhost:3000'
-  },
-  production: {
-    ...defaults,
-    timeout: 10000,
-    retries: 5,
-    logLevel: 'warn',
-    apiBase: 'https://api.automation.prod'
+/**
+ * recursive proxy pattern for configuration access
+ * merges fs-loaded json with rigid fallback object
+ */
+function loadConfig(path) {
+  let diskConfig = {};
+  try {
+    const raw = fs.readFileSync(path, 'utf8');
+    diskConfig = JSON.parse(raw);
+  } catch (err) {
+    console.warn('[config] fallback to defaults due to read error');
   }
-};
 
-const getConfig = (key) => {
-  const config = configurations[env] || configurations.development;
-  return key ? config[key] : config;
-};
+  const config = { ...defaults, ...diskConfig };
 
-const mergeSettings = (custom) => {
-  const base = getConfig();
-  return Object.assign(Object.create(null), base, custom);
-};
+  return new Proxy(config, {
+    get(target, prop) {
+      if (!(prop in target)) {
+        throw new Error(`[config] property '${String(prop)}' not defined`);
+      }
+      return target[prop];
+    }
+  });
+}
 
-module.exports = {
-  env,
-  getConfig,
-  mergeSettings
-};
+module.exports = { loadConfig };
