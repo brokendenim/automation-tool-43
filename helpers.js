@@ -1,41 +1,32 @@
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
-};
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
+const retry = async (fn, { retries = 3, factor = 2, baseDelay = 1000 } = {}) => {
+  let lastError;
+  let currentDelay = baseDelay;
 
-const ensureDir = (fs, path) => {
-  if (!fs.existsSync(path)) {
-    fs.mkdirSync(path, { recursive: true });
-  }
-};
-
-const slugify = (str) => 
-  str.toString().toLowerCase().trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-');
-
-const taskScheduler = (tasks) => {
-  const queue = [...tasks];
-  const execute = async () => {
-    while (queue.length > 0) {
-      const task = queue.shift();
-      try {
-        await task();
-      } catch (err) {
-        console.error('Task failed, skipping:', err);
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries - 1) {
+        await delay(currentDelay);
+        currentDelay *= factor;
       }
     }
-  };
-  return { execute };
+  }
+  throw lastError;
 };
 
-export { memoize, pipe, ensureDir, slugify, taskScheduler };
+const fetchWithRetry = async (url, options = {}) => {
+  return retry(
+    async () => {
+      const response = await fetch(url, options);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response;
+    },
+    { retries: 5 }
+  );
+};
+
+module.exports = { retry, fetchWithRetry };
