@@ -1,55 +1,34 @@
 const fs = require('fs');
 const path = require('path');
 
-class RotatingLogger {
-  constructor(filename, maxBytes = 10240) {
-    this.filename = filename;
-    this.maxBytes = maxBytes;
+const LOG_FILE = path.join(__dirname, 'app.log');
+
+const timestamp = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+const style = (level) => ({
+  info: '\x1b[36m[INFO]\x1b[0m',
+  warn: '\x1b[33m[WARN]\x1b[0m',
+  error: '\x1b[31m[ERRO]\x1b[0m'
+}[level]);
+
+const logger = (level, message) => {
+  const logEntry = `${timestamp()} ${style(level)}: ${message}`;
+  process.stdout.write(logEntry + '\n');
+  
+  try {
+    fs.appendFileSync(LOG_FILE, logEntry.replace(/\x1b\[[0-9;]*m/g, '') + '\n');
+  } catch (err) {
+    console.error('Persistence failure in logger module');
   }
-
-  rotate() {
-    if (!fs.existsSync(this.filename)) return;
-    const ext = path.extname(this.filename);
-    const base = path.basename(this.filename, ext);
-    const dir = path.dirname(this.filename);
-    const archivePath = path.join(dir, `${base}_${Date.now()}${ext}`);
-    fs.renameSync(this.filename, archivePath);
-  }
-
-  write(level, message) {
-    const timestamp = new Date().toISOString();
-    const logLine = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
-    const sizeDelta = Buffer.byteLength(logLine, 'utf8');
-
-    let currentSize = 0;
-    try {
-      currentSize = fs.statSync(this.filename).size;
-    } catch (err) {
-      // File does not exist yet
-    }
-
-    if (currentSize + sizeDelta > this.maxBytes) {
-      this.rotate();
-    }
-
-    fs.appendFileSync(this.filename, logLine, 'utf8');
-  }
-}
-
-const createLogger = (filepath, maxBytes) => {
-  const instance = new RotatingLogger(filepath, maxBytes);
-  return new Proxy(instance, {
-    get(target, prop) {
-      if (prop in target) {
-        return target[prop];
-      }
-      return (message) => target.write(prop, message);
-    },
-    set(target, prop, value) {
-      target.write(prop, String(value));
-      return true;
-    }
-  });
 };
 
-module.exports = createLogger;
+module.exports = {
+  info: (msg) => logger('info', msg),
+  warn: (msg) => logger('warn', msg),
+  error: (msg) => logger('error', msg),
+  clear: () => fs.writeFileSync(LOG_FILE, ''),
+  tail: (lines = 10) => {
+    const data = fs.readFileSync(LOG_FILE, 'utf8');
+    return data.trim().split('\n').slice(-lines).join('\n');
+  }
+};
