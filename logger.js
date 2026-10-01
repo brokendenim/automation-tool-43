@@ -1,31 +1,31 @@
 const fs = require('fs');
 const path = require('path');
 
-const LOG_FILE = path.join(__dirname, 'automation.log');
+const LOG_FILE = 'app.log';
+const MAX_SIZE = 1024 * 512;
 
-const format = (lvl, msg) => {
-  const ts = new Date().toISOString();
-  return `[${ts}] [${lvl.toUpperCase()}]: ${msg}`;
-};
-
-const stream = (lvl, msg) => {
-  const line = format(lvl, msg);
-  process.stdout.write(line + '\n');
-  fs.appendFile(LOG_FILE, line + '\n', (err) => {
-    if (err) console.error('Logging failure:', err);
-  });
+const rotate = (filePath) => {
+  if (!fs.existsSync(filePath)) return;
+  const stats = fs.statSync(filePath);
+  if (stats.size > MAX_SIZE) {
+    const timestamp = Date.now();
+    fs.renameSync(filePath, `${filePath}.${timestamp}.old`);
+  }
 };
 
 const logger = {
-  info: (msg) => stream('info', msg),
-  warn: (msg) => stream('warn', msg),
-  error: (msg) => stream('error', msg),
-  trace: (val) => {
-    const stack = new Error().stack.split('\n')[2];
-    stream('trace', `${JSON.stringify(val)} at ${stack.trim()}`);
+  log: (message) => {
+    rotate(LOG_FILE);
+    const entry = `[${new Date().toISOString()}] ${message}\n`;
+    process.stdout.write(entry);
+    fs.appendFileSync(LOG_FILE, entry);
   },
-  // Unconventional: quick heartbeat to verify logs
-  pulse: () => stream('debug', 'heartbeat signal active')
+  error: (err) => {
+    logger.log(`ERROR: ${err.stack || err}`);
+  },
+  info: (msg) => {
+    logger.log(`INFO: ${msg}`);
+  }
 };
 
 module.exports = logger;
