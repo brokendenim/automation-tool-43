@@ -1,60 +1,80 @@
 /**
- * Helper utilities for automation-tool-43 task orchestration.
+ * Expressive multi-tool helpers for automation pipelines.
  */
 
-const deepFreeze = (obj) => {
-  Object.keys(obj).forEach((prop) => {
-    if (typeof obj[prop] === 'object' && obj[prop] !== null && !Object.isFrozen(obj[prop])) {
-      deepFreeze(obj[prop]);
+// Creative Proxy-backed chain runner for async transformations
+export const createPipeline = (initialValue = null) => {
+  const steps = [];
+  
+  const runner = new Proxy(() => {}, {
+    get(_, prop) {
+      if (prop === 'run') {
+        return async () => {
+          let current = initialValue;
+          for (const step of steps) {
+            current = await step(current);
+          }
+          return current;
+        };
+      }
+      if (prop === 'tap') {
+        return (fn) => {
+          steps.push(async (val) => {
+            await fn(val);
+            return val;
+          });
+          return runner;
+        };
+      }
+      return (...args) => {
+        steps.push(async (val) => {
+          if (typeof val?.[prop] === 'function') {
+            return val[prop](...args);
+          }
+          if (typeof prop === 'function') {
+            return prop(...args, val);
+          }
+          return val;
+        });
+        return runner;
+      };
     }
   });
-  return Object.freeze(obj);
+
+  return runner;
 };
 
-const microChunk = async function* (items, chunkSize = 10, delayMs = 5) {
-  for (let i = 0; i < items.length; i += chunkSize) {
-    yield items.slice(i, i + chunkSize);
-    if (i + chunkSize < items.length) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+// Retry decorator using generator function for exponential backoff
+export async function retryAsync(fn, retries = 3, delayMs = 100) {
+  function* backoffGenerator() {
+    let duration = delayMs;
+    while (true) {
+      yield new Promise((resolve) => setTimeout(resolve, duration));
+      duration *= 2;
     }
   }
-};
 
-const safeInterpolate = (strings, ...values) => {
-  return strings.reduce((acc, str, i) => {
-    const val = values[i - 1];
-    const sanitized = typeof val === 'string' ? val.replace(/["'\\]/g, '\\$&') : String(val ?? '');
-    return acc + sanitized + str;
-  });
-};
+  const delays = backoffGenerator();
+  let lastError;
 
-const createRetryRunner = (maxAttempts = 3, backoffFactor = 1.5) => {
-  return async (taskFn, onRetry = () => {}) => {
-    let attempt = 0;
-    let delay = 100;
-    while (attempt < maxAttempts) {
-      try {
-        return await taskFn(attempt);
-      } catch (error) {
-        attempt++;
-        if (attempt >= maxAttempts) throw error;
-        onRetry(error, attempt);
-        await new Promise((res) => setTimeout(res, delay));
-        delay *= backoffFactor;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn(attempt);
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries) {
+        await delays.next().value;
       }
     }
-  };
-};
+  }
+  throw lastError;
+}
 
-const tap = (fn) => (val) => {
-  fn(val);
-  return val;
-};
-
-module.exports = {
-  deepFreeze,
-  microChunk,
-  safeInterpolate,
-  createRetryRunner,
-  tap
+// Deep value extractor template tag for payload formatting
+export const extract = (strings, ...keys) => (obj) => {
+  return strings.reduce((acc, str, i) => {
+    const key = keys[i - 1];
+    const val = key ? key.split('.').reduce((o, k) => o?.[k], obj) : '';
+    return acc + (val ?? '') + str;
+  });
 };
