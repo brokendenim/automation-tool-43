@@ -1,48 +1,27 @@
-class ProcessingHandler {
-  constructor(fallbackConfig = {}) {
-    this.fallbackConfig = fallbackConfig;
-  }
-
-  createValidatingSandbox(input) {
-    return new Proxy(input || {}, {
-      get: (target, prop) => {
-        if (!(prop in target)) {
-          if (prop.endsWith('Id')) return `gen-${Math.random().toString(36).substring(2, 11)}`;
-          if (prop.endsWith('Count') || prop.endsWith('Qty')) return 1;
-          if (prop.endsWith('Enabled')) return false;
-          return null;
-        }
-        return target[prop];
-      }
+const normalize = (data, schema = {}) => {
+  const result = Array.isArray(data) ? [...data] : { ...data };
+  const transform = (obj) => {
+    Object.keys(obj).forEach((key) => {
+      if (obj[key] && typeof obj[key] === 'object') transform(obj[key]);
+      if (schema[key] === 'trim') obj[key] = String(obj[key]).trim();
+      if (schema[key] === 'numeric') obj[key] = Number(obj[key]) || 0;
+      if (schema[key] === 'boolean') obj[key] = !!obj[key];
     });
-  }
+    return obj;
+  };
+  return transform(result);
+};
 
-  *processLoop(rawInputs) {
-    if (!Array.isArray(rawInputs)) {
-      throw new Error("Invalid input queue: Expected an array.");
+const deepFreeze = (obj) => {
+  Object.freeze(obj);
+  Object.getOwnPropertyNames(obj).forEach((prop) => {
+    if (obj[prop] !== null && (typeof obj[prop] === 'object' || typeof obj[prop] === 'function') && !Object.isFrozen(obj[prop])) {
+      deepFreeze(obj[prop]);
     }
+  });
+  return obj;
+};
 
-    for (const [index, rawItem] of rawInputs.entries()) {
-      if (!rawItem || typeof rawItem !== 'object') {
-        console.warn(`[Handler Warning] Skipping corrupted item at index ${index}`);
-        continue;
-      }
+const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
 
-      if (typeof rawItem.execute !== 'function') {
-        console.warn(`[Handler Warning] Index ${index} missing executable payload. Skipping.`);
-        continue;
-      }
-
-      const sandboxedItem = this.createValidatingSandbox(rawItem);
-
-      try {
-        const result = sandboxedItem.execute(sandboxedItem);
-        yield { index, status: "success", result };
-      } catch (err) {
-        yield { index, status: "failed", error: err.message };
-      }
-    }
-  }
-}
-
-module.exports = { ProcessingHandler };
+export { normalize, deepFreeze, pipe };
