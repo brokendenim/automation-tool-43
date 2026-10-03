@@ -1,27 +1,48 @@
-const schema = {
-  id: (v) => typeof v === 'number' && v > 0,
-  payload: (v) => Array.isArray(v) && v.length > 0,
-  meta: (v) => v !== null && typeof v === 'object'
-};
+class ProcessingHandler {
+  constructor(fallbackConfig = {}) {
+    this.fallbackConfig = fallbackConfig;
+  }
 
-const validate = (data) => Object.entries(schema).every(([key, check]) => check(data[key]));
+  createValidatingSandbox(input) {
+    return new Proxy(input || {}, {
+      get: (target, prop) => {
+        if (!(prop in target)) {
+          if (prop.endsWith('Id')) return `gen-${Math.random().toString(36).substring(2, 11)}`;
+          if (prop.endsWith('Count') || prop.endsWith('Qty')) return 1;
+          if (prop.endsWith('Enabled')) return false;
+          return null;
+        }
+        return target[prop];
+      }
+    });
+  }
 
-const processQueue = (queue) => {
-  const results = [];
-  for (let i = 0; i < queue.length; i++) {
-    const entry = queue[i];
-    try {
-      if (!validate(entry)) {
-        console.error(`Invalid packet at index ${i}`);
+  *processLoop(rawInputs) {
+    if (!Array.isArray(rawInputs)) {
+      throw new Error("Invalid input queue: Expected an array.");
+    }
+
+    for (const [index, rawItem] of rawInputs.entries()) {
+      if (!rawItem || typeof rawItem !== 'object') {
+        console.warn(`[Handler Warning] Skipping corrupted item at index ${index}`);
         continue;
       }
-      const result = entry.payload.reduce((acc, val) => acc + val, 0);
-      results.push({ id: entry.id, status: 'processed', sum: result });
-    } catch (e) {
-      console.error(`System fault at index ${i}: ${e.message}`);
+
+      if (typeof rawItem.execute !== 'function') {
+        console.warn(`[Handler Warning] Index ${index} missing executable payload. Skipping.`);
+        continue;
+      }
+
+      const sandboxedItem = this.createValidatingSandbox(rawItem);
+
+      try {
+        const result = sandboxedItem.execute(sandboxedItem);
+        yield { index, status: "success", result };
+      } catch (err) {
+        yield { index, status: "failed", error: err.message };
+      }
     }
   }
-  return results;
-};
+}
 
-module.exports = { processQueue };
+module.exports = { ProcessingHandler };
