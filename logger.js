@@ -1,34 +1,56 @@
 const fs = require('fs');
 const path = require('path');
 
-const LOG_FILE = path.join(__dirname, 'app.log');
+class PulseLogger {
+  constructor(opts = {}) {
+    this.dir = opts.dir || './logs';
+    this.filename = opts.filename || 'automation.log';
+    this.maxBytes = opts.maxBytes || 4096;
+    this.maxFiles = opts.maxFiles || 4;
+    this._ensureDir();
 
-const timestamp = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
-
-const style = (level) => ({
-  info: '\x1b[36m[INFO]\x1b[0m',
-  warn: '\x1b[33m[WARN]\x1b[0m',
-  error: '\x1b[31m[ERRO]\x1b[0m'
-}[level]);
-
-const logger = (level, message) => {
-  const logEntry = `${timestamp()} ${style(level)}: ${message}`;
-  process.stdout.write(logEntry + '\n');
-  
-  try {
-    fs.appendFileSync(LOG_FILE, logEntry.replace(/\x1b\[[0-9;]*m/g, '') + '\n');
-  } catch (err) {
-    console.error('Persistence failure in logger module');
+    return new Proxy(this, {
+      get: (target, prop) => {
+        if (prop in target) return target[prop];
+        return (...args) => target._dispatch(prop.toUpperCase(), args);
+      }
+    });
   }
-};
 
-module.exports = {
-  info: (msg) => logger('info', msg),
-  warn: (msg) => logger('warn', msg),
-  error: (msg) => logger('error', msg),
-  clear: () => fs.writeFileSync(LOG_FILE, ''),
-  tail: (lines = 10) => {
-    const data = fs.readFileSync(LOG_FILE, 'utf8');
-    return data.trim().split('\n').slice(-lines).join('\n');
+  _ensureDir() {
+    if (!fs.existsSync(this.dir)) {
+      fs.mkdirSync(this.dir, { recursive: true });
+    }
   }
-};
+
+  _rotateIfNeeded(incomingBytes) {
+    const mainPath = path.join(this.dir, this.filename);
+    if (!fs.existsSync(mainPath)) return;
+
+    const { size } = fs.statSync(mainPath);
+    if (size + incomingBytes < this.maxBytes) return;
+
+    for (let i = this.maxFiles - 1; i >= 1; i--) {
+      const src = i === 1 ? mainPath : path.join(this.dir, `${this.filename}.${i - 1}`);
+      const dest = path.join(this.dir, `${this.filename}.${i}`);
+      if (fs.existsSync(src)) {
+        fs.renameSync(src, dest);
+      }
+    }
+  }
+
+  _dispatch(level, args) {
+    const formattedMsg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    const record = JSON.stringify({ ts: new Date().toISOString(), level, msg: formattedMsg }) + '\n';
+    const bytes = Buffer.byteLength(record, 'utf8');
+    const mainPath = path.join(this.dir, this.filename);
+
+    this._rotateIfNeeded(bytes);
+    fs.appendFileSync(mainPath, record, 'utf8');
+
+    const color = level === 'ERROR' ? '\x1b[31m' : level === 'WARN' ? '\x1b[33m' : '\x1b[32m';
+    process.stdout.write(`${color}[${level}]\x1b[0m ${formattedMsg}\n`);
+  }
+}
+
+module.exports = new PulseLogger({ maxBytes: 2048, maxFiles: 3 });
