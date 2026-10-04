@@ -1,27 +1,45 @@
-const normalize = (data, schema = {}) => {
-  const result = Array.isArray(data) ? [...data] : { ...data };
-  const transform = (obj) => {
-    Object.keys(obj).forEach((key) => {
-      if (obj[key] && typeof obj[key] === 'object') transform(obj[key]);
-      if (schema[key] === 'trim') obj[key] = String(obj[key]).trim();
-      if (schema[key] === 'numeric') obj[key] = Number(obj[key]) || 0;
-      if (schema[key] === 'boolean') obj[key] = !!obj[key];
-    });
-    return obj;
-  };
-  return transform(result);
-};
+const fs = require('fs').promises;
+const path = require('path');
 
-const deepFreeze = (obj) => {
-  Object.freeze(obj);
-  Object.getOwnPropertyNames(obj).forEach((prop) => {
-    if (obj[prop] !== null && (typeof obj[prop] === 'object' || typeof obj[prop] === 'function') && !Object.isFrozen(obj[prop])) {
-      deepFreeze(obj[prop]);
-    }
+const cleanup = async (targetDir) => {
+  const files = await fs.readdir(targetDir);
+  const tasks = files.map(async (file) => {
+    const filePath = path.join(targetDir, file);
+    const stats = await fs.stat(filePath);
+    if (stats.isDirectory()) return null;
+
+    const data = await fs.readFile(filePath, 'utf8');
+    const isCruft = data.includes('// temp') || data.length < 10;
+    
+    return isCruft ? fs.unlink(filePath).then(() => file) : null;
   });
-  return obj;
+
+  const results = await Promise.all(tasks);
+  return results.filter(Boolean);
 };
 
-const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
+const organize = async (files, targetDir) => {
+  const sorted = files.reduce((acc, file) => {
+    const ext = path.extname(file).slice(1) || 'misc';
+    acc[ext] = acc[ext] || [];
+    acc[ext].push(file);
+    return acc;
+  }, {});
 
-export { normalize, deepFreeze, pipe };
+  for (const [ext, list] of Object.entries(sorted)) {
+    const dir = path.join(targetDir, ext);
+    await fs.mkdir(dir, { recursive: true });
+    await Promise.all(list.map(f => fs.rename(path.join(targetDir, f), path.join(dir, f))));
+  }
+};
+
+module.exports = async (dir) => {
+  try {
+    const deleted = await cleanup(dir);
+    const remaining = (await fs.readdir(dir)).filter(f => !deleted.includes(f));
+    await organize(remaining, dir);
+    return { status: 'success', deleted };
+  } catch (err) {
+    return { status: 'error', message: err.message };
+  }
+};
