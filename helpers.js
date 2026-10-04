@@ -1,80 +1,32 @@
-/**
- * Expressive multi-tool helpers for automation pipelines.
- */
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Creative Proxy-backed chain runner for async transformations
-export const createPipeline = (initialValue = null) => {
-  const steps = [];
-  
-  const runner = new Proxy(() => {}, {
-    get(_, prop) {
-      if (prop === 'run') {
-        return async () => {
-          let current = initialValue;
-          for (const step of steps) {
-            current = await step(current);
-          }
-          return current;
-        };
-      }
-      if (prop === 'tap') {
-        return (fn) => {
-          steps.push(async (val) => {
-            await fn(val);
-            return val;
-          });
-          return runner;
-        };
-      }
-      return (...args) => {
-        steps.push(async (val) => {
-          if (typeof val?.[prop] === 'function') {
-            return val[prop](...args);
-          }
-          if (typeof prop === 'function') {
-            return prop(...args, val);
-          }
-          return val;
-        });
-        return runner;
-      };
-    }
-  });
-
-  return runner;
-};
-
-// Retry decorator using generator function for exponential backoff
-export async function retryAsync(fn, retries = 3, delayMs = 100) {
-  function* backoffGenerator() {
-    let duration = delayMs;
-    while (true) {
-      yield new Promise((resolve) => setTimeout(resolve, duration));
-      duration *= 2;
-    }
-  }
-
-  const delays = backoffGenerator();
+const retry = async (fn, options = {}) => {
+  const { maxRetries = 3, factor = 2, baseDelay = 1000 } = options;
   let lastError;
 
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await fn(attempt);
+      return await fn();
     } catch (err) {
       lastError = err;
-      if (attempt < retries) {
-        await delays.next().value;
-      }
+      if (attempt === maxRetries) break;
+      
+      const waitTime = baseDelay * Math.pow(factor, attempt);
+      await delay(waitTime + Math.random() * 100);
     }
   }
   throw lastError;
-}
+};
 
-// Deep value extractor template tag for payload formatting
-export const extract = (strings, ...keys) => (obj) => {
-  return strings.reduce((acc, str, i) => {
-    const key = keys[i - 1];
-    const val = key ? key.split('.').reduce((o, k) => o?.[k], obj) : '';
-    return acc + (val ?? '') + str;
+const safeFetch = async (url, config = {}) => {
+  return await retry(async () => {
+    const response = await fetch(url, config);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response;
+  }, {
+    maxRetries: 4,
+    baseDelay: 500
   });
 };
+
+export { retry, safeFetch };
