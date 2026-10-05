@@ -1,40 +1,34 @@
-const sanitizeConfig = (raw) => {
-  const defaults = { timeout: 5000, retries: 3 };
-  try {
-    if (typeof raw !== 'object' || raw === null) throw new TypeError('Invalid config input');
-    return Object.assign(Object.create(null), defaults, Object.fromEntries(
-      Object.entries(raw).map(([k, v]) => [k, v ?? defaults[k]])
-    ));
-  } catch (err) {
-    console.error('Config injection failure:', err.message);
-    return defaults;
-  }
+const env = process.env.NODE_ENV || 'development';
+
+const baseConfig = {
+  timeout: 5000,
+  retryLimit: 3,
+  features: ['auto-save', 'stream-buffer']
 };
 
-const getSafeDeep = (obj, path, fallback) => {
-  const parts = path.split('.');
-  let current = obj;
-  for (const part of parts) {
-    if (current === null || typeof current !== 'object' || !(part in current)) {
-      return fallback;
-    }
-    current = current[part];
-  }
-  return current ?? fallback;
+const strategies = {
+  development: { debug: true, verbosity: 2 },
+  production: { debug: false, verbosity: 0 },
+  test: { debug: true, verbosity: 1 }
 };
 
-const envOverride = (key) => {
-  const val = process.env[key];
-  if (val === undefined) return null;
-  try {
-    return JSON.parse(val);
-  } catch {
-    return val;
-  }
+const buildConfig = (env) => {
+  const overrides = strategies[env] || strategies.development;
+  return Object.freeze({
+    ...baseConfig,
+    ...overrides,
+    timestamp: Date.now(),
+    isProd: env === 'production'
+  });
 };
 
-module.exports = {
-  sanitizeConfig,
-  getSafeDeep,
-  envOverride
+const appConfig = buildConfig(env);
+
+const get = (key) => appConfig[key];
+
+const update = (key, val) => {
+  if (appConfig.isProd) throw new Error('Immutable in production');
+  appConfig[key] = val;
 };
+
+module.exports = { get, update, config: appConfig };
