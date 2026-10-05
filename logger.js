@@ -1,34 +1,30 @@
-const validators = {
-  string: (val) => typeof val === 'string' && val.length > 0,
-  number: (val) => typeof val === 'number' && !isNaN(val),
-  object: (val) => val !== null && typeof val === 'object'
-};
+const fs = require('fs');
+const path = require('path');
 
-const audit = (schema) => (payload) => {
-  const report = Object.entries(schema).every(([key, type]) => 
-    validators[type](payload[key])
-  );
+const LOG_DIR = './logs';
+const MAX_SIZE = 1024 * 1024;
 
-  if (!report) {
-    throw new Error(`invalid payload: ${JSON.stringify(payload)}`);
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
+
+const getLogPath = (idx) => path.join(LOG_DIR, `app.${idx}.log`);
+
+const rotate = () => {
+  for (let i = 2; i >= 0; i--) {
+    const current = getLogPath(i);
+    if (fs.existsSync(current)) fs.renameSync(current, getLogPath(i + 1));
   }
-  return payload;
 };
 
-const processStream = (inputs) => {
-  const schema = { id: 'number', data: 'string' };
-  const validate = audit(schema);
+const logger = (msg) => {
+  const logFile = getLogPath(0);
+  const timestamp = new Date().toISOString();
+  const entry = `[${timestamp}] ${msg}\n`;
 
-  return inputs.reduce((acc, curr) => {
-    try {
-      const clean = validate(curr);
-      console.log(`[automation-tool-43] processing: ${clean.id}`);
-      acc.push(clean);
-    } catch (e) {
-      console.error(`[automation-tool-43] dropped input: ${e.message}`);
-    }
-    return acc;
-  }, []);
+  if (fs.existsSync(logFile) && fs.statSync(logFile).size > MAX_SIZE) {
+    rotate();
+  }
+
+  fs.appendFileSync(logFile, entry);
 };
 
-module.exports = { processStream };
+module.exports = { logger };
