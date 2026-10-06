@@ -1,35 +1,28 @@
-const utils = {
-  pipe: (...fns) => (x) => fns.reduce((v, f) => f(v), x),
-  memoize: (fn) => {
-    const cache = new Map();
-    return (...args) => {
-      const key = JSON.stringify(args);
-      if (cache.has(key)) return cache.get(key);
-      const result = fn(...args);
-      cache.set(key, result);
-      return result;
-    };
-  },
-  debounce: (fn, delay) => {
-    let timer;
-    return (...args) => {
-      clearTimeout(timer);
-      timer = setTimeout(() => fn(...args), delay);
-    };
-  },
-  randomId: (len = 16) => [...Array(len)].map(() => Math.floor(Math.random() * 16).toString(16)).join(''),
-  retry: async (fn, attempts = 3) => {
-    for (let i = 0; i < attempts; i++) {
-      try {
-        return await fn();
-      } catch (e) {
-        if (i === attempts - 1) throw e;
-        await new Promise(r => setTimeout(r, 100 * (i + 1)));
-      }
-    }
-  },
-  deepClone: (obj) => JSON.parse(JSON.stringify(obj)),
-  toggle: (val) => !val
+const memoize = (fn, cache = new Map()) => (...args) => {
+  const key = JSON.stringify(args);
+  return cache.has(key) ? cache.get(key) : cache.set(key, fn(...args)).get(key);
 };
 
-module.exports = utils;
+const pipeline = (...fns) => (val) => fns.reduce((acc, fn) => fn(acc), val);
+
+const debounce = (fn, delay) => {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+};
+
+const chunk = (arr, size) => Array.from({ length: Math.ceil(arr.length / size) }, (_, i) => arr.slice(i * size, i * size + size));
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const attempt = (fn, ...args) => {
+  try {
+    return { data: fn(...args), error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
+};
+
+module.exports = { memoize, pipeline, debounce, chunk, sleep, attempt };
