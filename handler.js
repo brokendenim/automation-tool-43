@@ -1,35 +1,46 @@
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Creative proxy-based pipeline for safe, fluent data manipulation.
+ * Resolves nested paths, handles array mappings, and runs standard methods dynamically.
+ */
+function chain(data) {
+  const pipeline = [];
 
-const createResilientHandler = (targetService, options = {}) => {
-  const { maxRetries = 3, initialDelay = 100 } = options;
-
-  return new Proxy(targetService, {
-    get(target, propKey, receiver) {
-      const originalMethod = Reflect.get(target, propKey, receiver);
-
-      if (typeof originalMethod !== 'function') {
-        return originalMethod;
+  const proxyHandler = {
+    get(_, prop) {
+      if (prop === 'val') {
+        return pipeline.reduce((acc, step) => {
+          if (acc === null || acc === undefined) return undefined;
+          return step(acc);
+        }, data);
       }
 
-      return async function (...args) {
-        let currentDelay = initialDelay;
-
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            return await originalMethod.apply(this, args);
-          } catch (error) {
-            const isNetworkError = !error.status || error.status >= 500;
-            if (!isNetworkError || attempt === maxRetries) {
-              throw error;
-            }
-            // Bitwise shift for dynamic exponential backoff with jitter
-            currentDelay = (currentDelay << 1) + Math.floor(Math.random() * 50);
-            await delay(currentDelay);
+      return (...args) => {
+        pipeline.push((current) => {
+          if (current === null || current === undefined) return undefined;
+          
+          if (typeof current[prop] === 'function') {
+            return current[prop](...args);
           }
-        }
+          
+          if (Array.isArray(current)) {
+            return current.map(item => {
+              if (item === null || item === undefined) return undefined;
+              if (typeof item[prop] === 'function') {
+                return item[prop](...args);
+              }
+              return item[prop];
+            });
+          }
+          
+          return current[prop];
+        });
+        
+        return new Proxy({}, proxyHandler);
       };
     }
-  });
-};
+  };
 
-module.exports = { createResilientHandler };
+  return new Proxy({}, proxyHandler);
+}
+
+module.exports = { chain };
