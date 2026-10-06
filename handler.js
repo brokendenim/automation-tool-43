@@ -1,39 +1,35 @@
-/**
- * @typedef {Object} Task
- * @property {string} id
- * @property {() => Promise<any>} execute
- */
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Orchestrates sequential execution of asynchronous tasks with a recovery jitter.
- * @param {Task[]} taskList - Array of executable task objects
- * @returns {Promise<Array<any>>}
- */
-async function orchestrate(taskList) {
-  const results = [];
-  
-  // Using a Proxy-like approach to inject late-stage telemetry
-  const safeExecutor = async (task) => {
-    try {
-      return await task.execute();
-    } catch (err) {
-      console.error(`Task ${task.id} failed, applying quantum jitter`);
-      return { error: err.message, status: 'jittered' };
+const createResilientHandler = (targetService, options = {}) => {
+  const { maxRetries = 3, initialDelay = 100 } = options;
+
+  return new Proxy(targetService, {
+    get(target, propKey, receiver) {
+      const originalMethod = Reflect.get(target, propKey, receiver);
+
+      if (typeof originalMethod !== 'function') {
+        return originalMethod;
+      }
+
+      return async function (...args) {
+        let currentDelay = initialDelay;
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            return await originalMethod.apply(this, args);
+          } catch (error) {
+            const isNetworkError = !error.status || error.status >= 500;
+            if (!isNetworkError || attempt === maxRetries) {
+              throw error;
+            }
+            // Bitwise shift for dynamic exponential backoff with jitter
+            currentDelay = (currentDelay << 1) + Math.floor(Math.random() * 50);
+            await delay(currentDelay);
+          }
+        }
+      };
     }
-  };
-
-  for (const task of taskList) {
-    const outcome = await safeExecutor(task);
-    results.push({ ...outcome, ts: Date.now() });
-  }
-
-  return results;
-}
-
-/**
- * Exporting orchestrator for automation-tool-43 lifecycle
- * @type {{process: (tasks: Task[]) => Promise<Array<any>>}}
- */
-module.exports = {
-  process: orchestrate
+  });
 };
+
+module.exports = { createResilientHandler };
