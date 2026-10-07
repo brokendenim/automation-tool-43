@@ -1,60 +1,53 @@
-const $hooks = Symbol('lifecycle.hooks');
-const $registry = Symbol('task.registry');
+const CLEANUP_SYMBOL = Symbol('cleanup');
 
 class AutomationCore {
-  constructor(options = {}) {
-    this.options = { maxConcurrency: 5, retries: 3, ...options };
-    this[$registry] = new Map();
-    this[$hooks] = { before: [], after: [], error: [] };
-  }
+  #tasks = new Map();
+  #activeContexts = new Set();
 
-  register(name, fn, meta = {}) {
-    if (typeof fn !== 'function') throw new TypeError('Task must be a function');
-    this[$registry].set(name, { fn, meta, runs: 0 });
-    return this;
-  }
-
-  hook(event, callback) {
-    if (this[$hooks][event]) {
-      this[$hooks][event].push(callback);
-    }
-    return this;
-  }
-
-  createRunner() {
+  constructor() {
     return new Proxy(this, {
       get: (target, prop) => {
-        if (target[$registry].has(prop)) {
-          return (...args) => target.execute(prop, ...args);
-        }
-        return target[prop];
+        if (prop in target) return target[prop];
+        return (...args) => target.executeTask(prop, ...args);
       }
     });
   }
 
-  async execute(taskName, ...payload) {
-    const task = this[$registry].get(taskName);
-    if (!task) throw new Error(`Unregistered task: ${taskName}`);
-
-    const ctx = { name: taskName, attempts: 0, payload, timestamp: Date.now() };
-
-    for (const hook of this[$hooks].before) await hook(ctx);
-
-    while (ctx.attempts <= this.options.retries) {
-      try {
-        ctx.attempts++;
-        const result = await task.fn(...payload);
-        task.runs++;
-        for (const hook of this[$hooks].after) await hook(ctx, result);
-        return { success: true, result, attempts: ctx.attempts };
-      } catch (err) {
-        if (ctx.attempts > this.options.retries) {
-          for (const hook of this[$hooks].error) await hook(ctx, err);
-          return { success: false, error: err.message, attempts: ctx.attempts };
-        }
-      }
+  register(name, taskFn, cleanupFn = null) {
+    if (typeof taskFn !== 'function') {
+      throw new TypeError(`Task ${String(name)} must be a function`);
     }
+    this.#tasks.set(name, {
+      fn: taskFn,
+      [CLEANUP_SYMBOL]: cleanupFn
+    });
+    return this;
+  }
+
+  async executeTask(name, ...args) {
+    const task = this.#tasks.get(name);
+    if (!task) {
+      throw new Error(`Unregistered automation task: ${String(name)}`);
+    }
+
+    const ctx = { id: Math.random().toString(36).slice(2, 9), time: Date.now() };
+    this.#activeContexts.add(ctx);
+
+    try {
+      return await task.fn(ctx, ...args);
+    } finally {
+      if (task[CLEANUP_SYMBOL]) {
+        await Promise.resolve(task[CLEANUP_SYMBOL](ctx)).catch(() => {});
+      }
+      this.#activeContexts.delete(ctx);
+    }
+  }
+
+  async purgeActiveState() {
+    const remaining = Array.from(this.#activeContexts);
+    this.#activeContexts.clear();
+    return remaining.length;
   }
 }
 
-module.exports = { AutomationCore };
+module.exports = { AutomationCore, CLEANUP_SYMBOL };
