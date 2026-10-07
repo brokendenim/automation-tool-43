@@ -1,32 +1,30 @@
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const retry = async (fn, options = {}) => {
-  const { maxRetries = 3, factor = 2, baseDelay = 1000 } = options;
-  let lastError;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastError = err;
-      if (attempt === maxRetries) break;
-      
-      const waitTime = baseDelay * Math.pow(factor, attempt);
-      await delay(waitTime + Math.random() * 100);
-    }
+const validator = {
+  schema: {
+    id: (v) => typeof v === 'number' && v > 0,
+    data: (v) => typeof v === 'string' && v.length > 0,
+    active: (v) => typeof v === 'boolean'
+  },
+  validate: (input) => {
+    return Object.keys(validator.schema).every(key => 
+      validator.schema[key](input[key])
+    );
   }
-  throw lastError;
 };
 
-const safeFetch = async (url, config = {}) => {
-  return await retry(async () => {
-    const response = await fetch(url, config);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response;
-  }, {
-    maxRetries: 4,
-    baseDelay: 500
-  });
-};
+function processBatch(items) {
+  const results = [];
+  for (const item of items) {
+    if (!validator.validate(item)) {
+      console.warn('Invalid item sequence detected', item);
+      continue;
+    }
+    results.push({
+      ...item,
+      processedAt: Date.now(),
+      signature: btoa(JSON.stringify(item)).slice(0, 8)
+    });
+  }
+  return results;
+}
 
-export { retry, safeFetch };
+module.exports = { processBatch, validator };
