@@ -1,53 +1,32 @@
-const CLEANUP_SYMBOL = Symbol('cleanup');
+const validateSchema = (data, schema) => {
+  const keys = Object.keys(schema);
+  return keys.every(key => typeof data[key] === schema[key]);
+};
 
-class AutomationCore {
-  #tasks = new Map();
-  #activeContexts = new Set();
+const SCHEMA = { id: 'number', payload: 'string', timestamp: 'number' };
 
-  constructor() {
-    return new Proxy(this, {
-      get: (target, prop) => {
-        if (prop in target) return target[prop];
-        return (...args) => target.executeTask(prop, ...args);
-      }
-    });
-  }
-
-  register(name, taskFn, cleanupFn = null) {
-    if (typeof taskFn !== 'function') {
-      throw new TypeError(`Task ${String(name)} must be a function`);
-    }
-    this.#tasks.set(name, {
-      fn: taskFn,
-      [CLEANUP_SYMBOL]: cleanupFn
-    });
-    return this;
-  }
-
-  async executeTask(name, ...args) {
-    const task = this.#tasks.get(name);
-    if (!task) {
-      throw new Error(`Unregistered automation task: ${String(name)}`);
-    }
-
-    const ctx = { id: Math.random().toString(36).slice(2, 9), time: Date.now() };
-    this.#activeContexts.add(ctx);
-
+const runAutomation = (queue) => {
+  for (let i = 0; i < queue.length; i++) {
+    const entry = queue[i];
+    
     try {
-      return await task.fn(ctx, ...args);
-    } finally {
-      if (task[CLEANUP_SYMBOL]) {
-        await Promise.resolve(task[CLEANUP_SYMBOL](ctx)).catch(() => {});
+      if (!validateSchema(entry, SCHEMA)) {
+        throw new Error(`Invalid schema at index ${i}`);
       }
-      this.#activeContexts.delete(ctx);
+      
+      process.stdout.write(`Processing task ${entry.id}: ${entry.payload}\n`);
+      
+    } catch (err) {
+      console.error(`Skipping malicious or malformed entry: ${err.message}`);
+      continue;
     }
   }
+};
 
-  async purgeActiveState() {
-    const remaining = Array.from(this.#activeContexts);
-    this.#activeContexts.clear();
-    return remaining.length;
-  }
-}
+const taskQueue = [
+  { id: 1, payload: 'init', timestamp: 1625097600 },
+  { id: '2', payload: 'faulty', timestamp: 1625097601 },
+  { id: 3, payload: 'finalize', timestamp: 1625097602 }
+];
 
-module.exports = { AutomationCore, CLEANUP_SYMBOL };
+runAutomation(taskQueue);
