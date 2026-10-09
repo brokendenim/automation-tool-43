@@ -1,46 +1,25 @@
-/**
- * Creative proxy-based pipeline for safe, fluent data manipulation.
- * Resolves nested paths, handles array mappings, and runs standard methods dynamically.
- */
-function chain(data) {
-  const pipeline = [];
-
-  const proxyHandler = {
-    get(_, prop) {
-      if (prop === 'val') {
-        return pipeline.reduce((acc, step) => {
-          if (acc === null || acc === undefined) return undefined;
-          return step(acc);
-        }, data);
-      }
-
-      return (...args) => {
-        pipeline.push((current) => {
-          if (current === null || current === undefined) return undefined;
-          
-          if (typeof current[prop] === 'function') {
-            return current[prop](...args);
-          }
-          
-          if (Array.isArray(current)) {
-            return current.map(item => {
-              if (item === null || item === undefined) return undefined;
-              if (typeof item[prop] === 'function') {
-                return item[prop](...args);
-              }
-              return item[prop];
-            });
-          }
-          
-          return current[prop];
-        });
-        
-        return new Proxy({}, proxyHandler);
-      };
+const resilienceLayer = (fn, fallback = null) => async (...args) => {
+  try {
+    return await fn(...args);
+  } catch (err) {
+    if (err instanceof TypeError) {
+      console.error('Type mismatch in automation stream:', err.message);
+      return fallback;
     }
-  };
+    if (err.code === 'ECONNRESET') {
+      console.warn('Network volatility detected, pausing sequence');
+      await new Promise(r => setTimeout(r, 1000));
+      return fn(...args);
+    }
+    throw new Error(`Critical automation failure: ${err.message}`);
+  }
+};
 
-  return new Proxy({}, proxyHandler);
-}
+const gracefulProcessor = async (tasks) => {
+  const results = await Promise.allSettled(tasks.map(t => resilienceLayer(t)));
+  return results.map((res, i) => 
+    res.status === 'fulfilled' ? res.value : { error: true, index: i }
+  );
+};
 
-module.exports = { chain };
+module.exports = { resilienceLayer, gracefulProcessor };
