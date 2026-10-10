@@ -1,25 +1,34 @@
-const resilienceLayer = (fn, fallback = null) => async (...args) => {
+const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
+
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
+};
+
+const batch = (items, size) => Array.from({ length: Math.ceil(items.length / size) }, (_, i) => items.slice(i * size, i * size + size));
+
+const debounce = (fn, wait) => {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fn(...args), wait);
+  };
+};
+
+const attempt = (fn, fallback = null) => {
   try {
-    return await fn(...args);
-  } catch (err) {
-    if (err instanceof TypeError) {
-      console.error('Type mismatch in automation stream:', err.message);
-      return fallback;
-    }
-    if (err.code === 'ECONNRESET') {
-      console.warn('Network volatility detected, pausing sequence');
-      await new Promise(r => setTimeout(r, 1000));
-      return fn(...args);
-    }
-    throw new Error(`Critical automation failure: ${err.message}`);
+    return fn();
+  } catch (e) {
+    return typeof fallback === 'function' ? fallback(e) : fallback;
   }
 };
 
-const gracefulProcessor = async (tasks) => {
-  const results = await Promise.allSettled(tasks.map(t => resilienceLayer(t)));
-  return results.map((res, i) => 
-    res.status === 'fulfilled' ? res.value : { error: true, index: i }
-  );
-};
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-module.exports = { resilienceLayer, gracefulProcessor };
+module.exports = { pipe, memoize, batch, debounce, attempt, sleep };
