@@ -1,34 +1,34 @@
-const env = process.env.NODE_ENV || 'development';
+const fs = require('fs');
 
-const baseConfig = {
-  timeout: 5000,
-  retryLimit: 3,
-  features: ['auto-save', 'stream-buffer']
+const mergeDeep = (target, source) => {
+  for (const key of Object.keys(source)) {
+    if (source[key] instanceof Object && key in target) {
+      Object.assign(source[key], mergeDeep(target[key], source[key]));
+    }
+  }
+  return { ...target, ...source };
 };
 
-const strategies = {
-  development: { debug: true, verbosity: 2 },
-  production: { debug: false, verbosity: 0 },
-  test: { debug: true, verbosity: 1 }
+const loadConfig = (path, defaults = {}) => {
+  try {
+    const raw = fs.readFileSync(path, 'utf8');
+    const userConfig = JSON.parse(raw);
+    return mergeDeep(defaults, userConfig);
+  } catch (err) {
+    return defaults;
+  }
 };
 
-const buildConfig = (env) => {
-  const overrides = strategies[env] || strategies.development;
-  return Object.freeze({
-    ...baseConfig,
-    ...overrides,
-    timestamp: Date.now(),
-    isProd: env === 'production'
-  });
+const defaults = {
+  port: 8080,
+  logging: {
+    level: 'info',
+    path: './logs/app.log'
+  },
+  retries: 3
 };
 
-const appConfig = buildConfig(env);
-
-const get = (key) => appConfig[key];
-
-const update = (key, val) => {
-  if (appConfig.isProd) throw new Error('Immutable in production');
-  appConfig[key] = val;
+module.exports = {
+  config: loadConfig('./config.json', defaults),
+  loadConfig
 };
-
-module.exports = { get, update, config: appConfig };
