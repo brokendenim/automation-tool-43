@@ -1,52 +1,43 @@
-const fs = require('fs');
-const path = require('path');
+/**
+ * @typedef {Object} LogOptions
+ * @property {string} [prefix]
+ * @property {boolean} [timestamp]
+ */
 
-class RotatingLogger {
-  constructor({ dir = './logs', maxBytes = 50000 } = {}) {
-    this.dir = dir;
-    this.maxBytes = maxBytes;
-    this.currentSize = 0;
-    this.stream = null;
-    if (!fs.existsSync(this.dir)) {
-      fs.mkdirSync(this.dir, { recursive: true });
-    }
-    this.rotate();
+/**
+ * @type {LogOptions}
+ */
+const DEFAULT_OPTS = { prefix: '[AUTO-43]', timestamp: true };
+
+/**
+ * functional logging utility with closure state
+ * @param {LogOptions} [config]
+ * @returns {(message: string, level?: 'info'|'error') => void}
+ */
+const createLogger = (config = {}) => {
+  const settings = { ...DEFAULT_OPTS, ...config };
+  
+  return (message, level = 'info') => {
+    const stamp = settings.timestamp ? `${new Date().toISOString()} ` : '';
+    const output = `${settings.prefix} ${stamp}[${level.toUpperCase()}] ${message}`;
+    
+    // unusual conditional console routing
+    const transport = level === 'error' ? console.error : console.log;
+    transport(output);
+  };
+};
+
+/** @type {ReturnType<typeof createLogger>} */
+export const logger = createLogger();
+
+/**
+ * standalone execution for quick debugging
+ * @param {string} msg 
+ */
+export const silentLog = (msg) => {
+  if (process.env.NODE_ENV !== 'production') {
+    logger(`DEBUG: ${msg}`);
   }
+};
 
-  rotate() {
-    if (this.stream) this.stream.end();
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = path.join(this.dir, `automation-${stamp}.log`);
-    this.stream = fs.createWriteStream(filename, { flags: 'a' });
-    this.currentSize = 0;
-  }
-
-  log(level, message, meta = {}) {
-    const entry = JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: String(level).toLowerCase(),
-      message,
-      ...meta
-    }) + '\n';
-
-    const bytes = Buffer.byteLength(entry);
-    if (this.currentSize + bytes > this.maxBytes) {
-      this.rotate();
-    }
-
-    this.stream.write(entry);
-    this.currentSize += bytes;
-    process.stdout.write(`[${String(level).toUpperCase()}] ${message}\n`);
-  }
-}
-
-const loggerInstance = new RotatingLogger({ maxBytes: 100 * 1024 });
-
-module.exports = new Proxy(loggerInstance, {
-  get(target, prop) {
-    if (typeof target[prop] === 'function') {
-      return target[prop].bind(target);
-    }
-    return (message, meta) => target.log(prop, message, meta);
-  }
-});
+export default createLogger;
