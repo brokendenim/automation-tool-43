@@ -1,30 +1,34 @@
-const validator = {
-  schema: {
-    id: (v) => typeof v === 'number' && v > 0,
-    data: (v) => typeof v === 'string' && v.length > 0,
-    active: (v) => typeof v === 'boolean'
-  },
-  validate: (input) => {
-    return Object.keys(validator.schema).every(key => 
-      validator.schema[key](input[key])
-    );
-  }
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
 };
 
-function processBatch(items) {
-  const results = [];
-  for (const item of items) {
-    if (!validator.validate(item)) {
-      console.warn('Invalid item sequence detected', item);
-      continue;
-    }
-    results.push({
-      ...item,
-      processedAt: Date.now(),
-      signature: btoa(JSON.stringify(item)).slice(0, 8)
-    });
-  }
-  return results;
-}
+const pipe = (...fns) => (initial) => fns.reduce((val, fn) => fn(val), initial);
 
-module.exports = { processBatch, validator };
+const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const partition = (arr, predicate) => {
+  const results = [[], []];
+  arr.forEach((item) => results[predicate(item) ? 0 : 1].push(item));
+  return results;
+};
+
+const debounce = (fn, delay) => {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+};
+
+const flatten = (arr) => arr.reduce((acc, val) => Array.isArray(val) ? acc.concat(flatten(val)) : acc.concat(val), []);
+
+module.exports = { memoize, pipe, deepClone, sleep, partition, debounce, flatten };
