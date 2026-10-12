@@ -1,41 +1,53 @@
-const fs = require('fs');
-const path = require('path');
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const directoryScanner = (root) => {
-  const entries = fs.readdirSync(root, { withFileTypes: true });
-  return entries.reduce((acc, entry) => {
-    const fullPath = path.join(root, entry.name);
-    return entry.isDirectory() 
-      ? [...acc, ...directoryScanner(fullPath)] 
-      : [...acc, fullPath];
-  }, []);
-};
-
-const batchProcessor = (items, batchSize, fn) => {
-  const results = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    results.push(Promise.all(items.slice(i, i + batchSize).map(fn)));
+function* fibonacciJitterSchedule(baseMs, jitterRatio = 0.25) {
+  let [a, b] = [baseMs, baseMs * 2];
+  while (true) {
+    const jitter = (Math.random() * 2 - 1) * jitterRatio * a;
+    yield Math.max(0, Math.floor(a + jitter));
+    [a, b] = [b, a + b];
   }
-  return Promise.all(results).then(res => res.flat());
-};
+}
 
-const createPipe = (...fns) => (initialValue) => 
-  fns.reduce((acc, fn) => fn(acc), initialValue);
+export async function executeWithRetry(operation, options = {}) {
+  const {
+    maxRetries = 4,
+    baseDelay = 150,
+    shouldRetry = () => true,
+    onAttemptFailed
+  } = options;
 
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
-};
+  const schedule = fibonacciJitterSchedule(baseDelay);
+  let attempt = 0;
 
-module.exports = { 
-  directoryScanner, 
-  batchProcessor, 
-  createPipe, 
-  memoize 
-};
+  while (true) {
+    attempt++;
+    try {
+      return await operation(attempt);
+    } catch (error) {
+      const hasAttemptsLeft = attempt <= maxRetries;
+      const canRetry = shouldRetry(error);
+
+      if (!hasAttemptsLeft || !canRetry) {
+        throw new Error(`Execution permanently failed after ${attempt} attempt(s): ${error.message}`);
+      }
+
+      const delayMs = schedule.next().value;
+      if (onAttemptFailed) {
+        onAttemptFailed(error, attempt, delayMs);
+      }
+
+      await sleep(delayMs);
+    }
+  }
+}
+
+export function wrapNetworkClient(client, retryOpts = {}) {
+  return new Proxy(client, {
+    get(target, prop) {
+      const value = target[prop];
+      if (typeof value !== 'function') return value;
+      return (...args) => executeWithRetry(() => value.apply(target, args), retryOpts);
+    }
+  });
+}
