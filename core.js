@@ -1,35 +1,63 @@
-const fs = require('fs');
-const path = require('path');
+class FlowProcessor {
+  constructor(iterable = []) {
+    this.source = Symbol.iterator in Object(iterable) || Symbol.asyncIterator in Object(iterable)
+      ? iterable
+      : [iterable];
+    this.pipeline = [];
+  }
 
-const Pipeline = (tasks) => ({
-  execute: async (ctx) => {
-    for (const task of tasks) {
-      ctx = await task(ctx);
+  map(fn) {
+    this.pipeline.push(async function* (stream) {
+      for await (const item of stream) {
+        yield await fn(item);
+      }
+    });
+    return this;
+  }
+
+  filter(predicate) {
+    this.pipeline.push(async function* (stream) {
+      for await (const item of stream) {
+        if (await predicate(item)) yield item;
+      }
+    });
+    return this;
+  }
+
+  flatten() {
+    this.pipeline.push(async function* (stream) {
+      for await (const item of stream) {
+        if (item && (typeof item === 'object' || Array.isArray(item))) {
+          if (Symbol.asyncIterator in item || Symbol.iterator in item) {
+            for await (const inner of item) yield inner;
+            continue;
+          }
+        }
+        yield item;
+      }
+    });
+    return this;
+  }
+
+  async collect() {
+    let stream = (async function* (src) {
+      for await (const chunk of src) yield chunk;
+    })(this.source);
+
+    for (const stage of this.pipeline) {
+      stream = stage(stream);
     }
-    return ctx;
+
+    const result = [];
+    for await (const value of stream) {
+      result.push(value);
+    }
+    return result;
   }
-});
+}
 
-const sanitizer = (data) => {
-  if (typeof data !== 'object') return {};
-  return Object.fromEntries(
-    Object.entries(data).filter(([_, v]) => v !== null && v !== undefined)
-  );
-};
+function createFlow(data) {
+  return new FlowProcessor(data);
+}
 
-const orchestrator = async (manifestPath) => {
-  try {
-    const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    const pipeline = Pipeline([
-      (data) => ({ ...data, timestamp: Date.now() }),
-      (data) => sanitizer(data),
-      (data) => ({ ...data, status: 'processed' })
-    ]);
-    
-    return await pipeline.execute(raw);
-  } catch (err) {
-    return { error: 'execution failure', detail: err.message };
-  }
-};
-
-module.exports = { orchestrator };
+module.exports = { FlowProcessor, createFlow };
