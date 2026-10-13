@@ -1,34 +1,25 @@
-const registry = new Map();
-
-const execute = async (task, payload) => {
-  const handler = registry.get(task);
-  if (!handler) throw new Error(`Task ${task} unregistered`);
-  return handler(payload);
-};
-
-const register = (tasks) => Object.entries(tasks).forEach(([k, v]) => registry.set(k, v));
-
-const pipeline = (fns) => (input) => fns.reduce((acc, fn) => acc.then(fn), Promise.resolve(input));
-
-const logger = (level) => (msg) => console.log(`[${level.toUpperCase()}] ${new Date().toISOString()}: ${msg}`);
-
-const initAutomation = (config) => {
-  const log = logger(config.debug ? 'debug' : 'info');
-  log('initializing automation-tool-43 engine');
-
-  return {
-    process: async (taskName, data) => {
-      try {
-        const result = await execute(taskName, data);
-        log(`success: ${taskName}`);
-        return result;
-      } catch (e) {
-        log(`failure: ${e.message}`);
-        return null;
+const attempt = async (fn, retries = 3, delay = 1000) => {
+  let lastError;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < retries - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delay * Math.pow(2, i)));
       }
-    },
-    register
-  };
+    }
+  }
+  throw lastError;
 };
 
-module.exports = { initAutomation, pipeline };
+const fetchWithGrace = async (url, options = {}) => {
+  const task = async () => {
+    const response = await fetch(url, options);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  };
+  return attempt(task);
+};
+
+export { fetchWithGrace, attempt };
