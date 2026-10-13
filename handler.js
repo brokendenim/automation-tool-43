@@ -1,26 +1,34 @@
-const normalize = (data) => {
-  const pipeline = [
-    (d) => (typeof d === 'string' ? d.trim() : d),
-    (d) => (d instanceof Date ? d.toISOString() : d),
-    (d) => (d && typeof d === 'object' ? Object.fromEntries(Object.entries(d).map(([k, v]) => [k.toLowerCase(), normalize(v)])) : d)
-  ];
-  return pipeline.reduce((acc, step) => step(acc), data);
+const registry = new Map();
+
+const execute = async (task, payload) => {
+  const handler = registry.get(task);
+  if (!handler) throw new Error(`Task ${task} unregistered`);
+  return handler(payload);
 };
 
-const deepFreeze = (obj) => {
-  Object.freeze(obj);
-  Object.getOwnPropertyNames(obj).forEach((prop) => {
-    if (obj[prop] !== null && (typeof obj[prop] === 'object' || typeof obj[prop] === 'function') && !Object.isFrozen(obj[prop])) {
-      deepFreeze(obj[prop]);
-    }
-  });
-  return obj;
+const register = (tasks) => Object.entries(tasks).forEach(([k, v]) => registry.set(k, v));
+
+const pipeline = (fns) => (input) => fns.reduce((acc, fn) => acc.then(fn), Promise.resolve(input));
+
+const logger = (level) => (msg) => console.log(`[${level.toUpperCase()}] ${new Date().toISOString()}: ${msg}`);
+
+const initAutomation = (config) => {
+  const log = logger(config.debug ? 'debug' : 'info');
+  log('initializing automation-tool-43 engine');
+
+  return {
+    process: async (taskName, data) => {
+      try {
+        const result = await execute(taskName, data);
+        log(`success: ${taskName}`);
+        return result;
+      } catch (e) {
+        log(`failure: ${e.message}`);
+        return null;
+      }
+    },
+    register
+  };
 };
 
-const sanitize = (payload) => {
-  const shadow = JSON.parse(JSON.stringify(payload));
-  const clean = normalize(shadow);
-  return deepFreeze(clean);
-};
-
-module.exports = { sanitize };
+module.exports = { initAutomation, pipeline };
