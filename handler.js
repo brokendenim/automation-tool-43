@@ -1,25 +1,31 @@
-const attempt = async (fn, retries = 3, delay = 1000) => {
-  let lastError;
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastError = err;
-      if (i < retries - 1) {
-        await new Promise((resolve) => setTimeout(resolve, delay * Math.pow(2, i)));
-      }
-    }
+const fs = require('fs');
+const path = require('path');
+
+const Registry = new Map();
+
+const bootstrap = (tasks) => {
+  tasks.forEach(({ name, logic }) => Registry.set(name, logic));
+  return { execute: trigger };
+};
+
+const trigger = async (name, payload) => {
+  if (!Registry.has(name)) throw new Error(`Task ${name} not found`);
+  try {
+    return await Registry.get(name)(payload);
+  } catch (err) {
+    return { status: 'failed', error: err.message };
   }
-  throw lastError;
 };
 
-const fetchWithGrace = async (url, options = {}) => {
-  const task = async () => {
-    const response = await fetch(url, options);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  };
-  return attempt(task);
+const cleanup = (dir) => {
+  fs.readdirSync(dir).forEach(file => {
+    if (file.endsWith('.tmp')) {
+      fs.unlinkSync(path.join(dir, file));
+    }
+  });
 };
 
-export { fetchWithGrace, attempt };
+module.exports = {
+  bootstrap,
+  cleanup
+};
