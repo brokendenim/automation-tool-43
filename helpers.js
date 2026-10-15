@@ -1,34 +1,33 @@
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
+const fs = require('fs');
+
+const mergeDeep = (target, source) => {
+  for (const key of Object.keys(source)) {
+    if (source[key] instanceof Object && key in target) {
+      Object.assign(source[key], mergeDeep(target[key], source[key]));
+    }
+  }
+  Object.assign(target || {}, source);
+  return target;
 };
 
-const pipe = (...fns) => (initial) => fns.reduce((val, fn) => fn(val), initial);
-
-const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const partition = (arr, predicate) => {
-  const results = [[], []];
-  arr.forEach((item) => results[predicate(item) ? 0 : 1].push(item));
-  return results;
+const loadConfig = (path, defaults = {}) => {
+  try {
+    const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+    return mergeDeep(defaults, data);
+  } catch (err) {
+    return defaults;
+  }
 };
 
-const debounce = (fn, delay) => {
-  let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
-  };
+const bootstrapConfig = (envKey, defaults) => {
+  const userConfig = loadConfig(process.env[envKey] || './config.json', defaults);
+  const proxy = new Proxy(userConfig, {
+    get: (target, prop) => {
+      if (!(prop in target)) throw new Error(`Config key ${String(prop)} missing`);
+      return target[prop];
+    }
+  });
+  return proxy;
 };
 
-const flatten = (arr) => arr.reduce((acc, val) => Array.isArray(val) ? acc.concat(flatten(val)) : acc.concat(val), []);
-
-module.exports = { memoize, pipe, deepClone, sleep, partition, debounce, flatten };
+module.exports = { bootstrapConfig };
