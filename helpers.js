@@ -1,33 +1,37 @@
-const fs = require('fs');
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    return cache.has(key) ? cache.get(key) : cache.set(key, fn(...args)).get(key);
+  };
+};
 
-const mergeDeep = (target, source) => {
-  for (const key of Object.keys(source)) {
-    if (source[key] instanceof Object && key in target) {
-      Object.assign(source[key], mergeDeep(target[key], source[key]));
-    }
+const pipeline = (...fns) => (val) => fns.reduce((acc, fn) => fn(acc), val);
+
+const batchProcess = (items, fn, chunkSize = 10) => {
+  const results = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    results.push(...items.slice(i, i + chunkSize).map(fn));
   }
-  Object.assign(target || {}, source);
-  return target;
+  return results;
 };
 
-const loadConfig = (path, defaults = {}) => {
-  try {
-    const data = JSON.parse(fs.readFileSync(path, 'utf8'));
-    return mergeDeep(defaults, data);
-  } catch (err) {
-    return defaults;
-  }
+const createRegistry = () => {
+  const registry = new Map();
+  return {
+    register: (key, val) => registry.set(key, val),
+    resolve: (key) => registry.get(key),
+    keys: () => Array.from(registry.keys()),
+    clear: () => registry.clear()
+  };
 };
 
-const bootstrapConfig = (envKey, defaults) => {
-  const userConfig = loadConfig(process.env[envKey] || './config.json', defaults);
-  const proxy = new Proxy(userConfig, {
-    get: (target, prop) => {
-      if (!(prop in target)) throw new Error(`Config key ${String(prop)} missing`);
-      return target[prop];
-    }
-  });
-  return proxy;
+const debounce = (fn, delay = 300) => {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
 };
 
-module.exports = { bootstrapConfig };
+module.exports = { memoize, pipeline, batchProcess, createRegistry, debounce };
