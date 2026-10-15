@@ -1,32 +1,22 @@
 const fs = require('fs');
 const path = require('path');
 
-const Logger = {
-  logs: [],
-  write: (msg, type = 'INFO') => {
-    const timestamp = new Date().toISOString();
-    const entry = `[${timestamp}] [${type}] ${msg}`;
-    Logger.logs.push(entry);
-    process.stdout.write(entry + '\n');
-    if (Logger.logs.length > 100) Logger.logs.shift();
-  },
-  persist: (file = 'session.log') => {
-    try {
-      fs.writeFileSync(path.join(__dirname, file), Logger.logs.join('\n'), 'utf8');
-    } catch (e) {
-      console.error('Persistence failure:', e);
-    }
-  },
-  format: (data) => {
-    try {
-      return JSON.stringify(data, null, 2);
-    } catch (_) {
-      return String(data);
-    }
-  },
-  dump: (data, label = 'DATA') => {
-    Logger.write(`${label}: ${Logger.format(data)}`);
-  }
-};
+const LOG_FILE = 'automation-tool-43.log';
+const MAX_SIZE = 1024 * 512;
 
-module.exports = Logger;
+function rotateIfNeeded() {
+  if (!fs.existsSync(LOG_FILE)) return;
+  const stats = fs.statSync(LOG_FILE);
+  if (stats.size > MAX_SIZE) {
+    const timestamp = Date.now();
+    fs.renameSync(LOG_FILE, `${LOG_FILE}.${timestamp}.old`);
+  }
+}
+
+function logger(message) {
+  rotateIfNeeded();
+  const entry = `[${new Date().toISOString()}] ${message}\n`;
+  fs.appendFileSync(LOG_FILE, entry, 'utf8');
+}
+
+module.exports = { logger };
