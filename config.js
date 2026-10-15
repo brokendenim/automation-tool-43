@@ -1,34 +1,31 @@
-const fs = require('fs');
+const path = require('path');
 
-const mergeDeep = (target, source) => {
-  for (const key of Object.keys(source)) {
-    if (source[key] instanceof Object && key in target) {
-      Object.assign(source[key], mergeDeep(target[key], source[key]));
-    }
-  }
-  return { ...target, ...source };
-};
-
-const loadConfig = (path, defaults = {}) => {
+const safeConfigLoader = (configPath) => {
   try {
-    const raw = fs.readFileSync(path, 'utf8');
-    const userConfig = JSON.parse(raw);
-    return mergeDeep(defaults, userConfig);
+    if (!configPath || typeof configPath !== 'string') {
+      throw new Error('invalid_path_type');
+    }
+    return require(path.resolve(configPath));
   } catch (err) {
-    return defaults;
-  }
-};
+    const errorMap = {
+      MODULE_NOT_FOUND: { status: 404, fallback: {} },
+      EACCES: { status: 403, fallback: { secure: true } },
+      invalid_path_type: { status: 400, fallback: { local: true } }
+    };
 
-const defaults = {
-  port: 8080,
-  logging: {
-    level: 'info',
-    path: './logs/app.log'
-  },
-  retries: 3
+    const recovery = errorMap[err.code] || { status: 500, fallback: null };
+    
+    if (!recovery.fallback) {
+      process.stderr.write(`[CRITICAL] Config failed: ${err.message}\n`);
+      process.exit(1);
+    }
+
+    console.warn(`[RECOVERY] Status ${recovery.status} - Applying safe defaults`);
+    return recovery.fallback;
+  }
 };
 
 module.exports = {
-  config: loadConfig('./config.json', defaults),
-  loadConfig
+  load: safeConfigLoader,
+  timestamp: Date.now()
 };
