@@ -1,37 +1,41 @@
+const transform = (input, mapping) => {
+  const result = Array.isArray(input) ? [] : {};
+  for (const [key, value] of Object.entries(input)) {
+    const targetKey = mapping[key] || key;
+    if (value !== null && typeof value === 'object') {
+      result[targetKey] = transform(value, mapping);
+    } else {
+      result[targetKey] = value;
+    }
+  }
+  return result;
+};
+
+const deepFreeze = (obj) => {
+  Object.keys(obj).forEach(prop => {
+    if (typeof obj[prop] === 'object' && obj[prop] !== null) {
+      deepFreeze(obj[prop]);
+    }
+  });
+  return Object.freeze(obj);
+};
+
+const pluck = (collection, path) => {
+  const segments = path.split('.');
+  return collection.map(item => 
+    segments.reduce((acc, part) => acc && acc[part], item)
+  ).filter(val => val !== undefined);
+};
+
 const memoize = (fn) => {
   const cache = new Map();
   return (...args) => {
     const key = JSON.stringify(args);
-    return cache.has(key) ? cache.get(key) : cache.set(key, fn(...args)).get(key);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
   };
 };
 
-const pipeline = (...fns) => (val) => fns.reduce((acc, fn) => fn(acc), val);
-
-const batchProcess = (items, fn, chunkSize = 10) => {
-  const results = [];
-  for (let i = 0; i < items.length; i += chunkSize) {
-    results.push(...items.slice(i, i + chunkSize).map(fn));
-  }
-  return results;
-};
-
-const createRegistry = () => {
-  const registry = new Map();
-  return {
-    register: (key, val) => registry.set(key, val),
-    resolve: (key) => registry.get(key),
-    keys: () => Array.from(registry.keys()),
-    clear: () => registry.clear()
-  };
-};
-
-const debounce = (fn, delay = 300) => {
-  let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
-  };
-};
-
-module.exports = { memoize, pipeline, batchProcess, createRegistry, debounce };
+export { transform, deepFreeze, pluck, memoize };
