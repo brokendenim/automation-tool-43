@@ -1,31 +1,27 @@
-const fs = require('fs');
-const path = require('path');
-
-const Registry = new Map();
-
-const bootstrap = (tasks) => {
-  tasks.forEach(({ name, logic }) => Registry.set(name, logic));
-  return { execute: trigger };
-};
-
-const trigger = async (name, payload) => {
-  if (!Registry.has(name)) throw new Error(`Task ${name} not found`);
+const handler = async (task, attempt = 0) => {
+  const MAX_RETRIES = 3;
   try {
-    return await Registry.get(name)(payload);
+    return await task();
   } catch (err) {
-    return { status: 'failed', error: err.message };
+    if (err.name === 'TypeError' || err.message.includes('fatal')) {
+      console.error('Critical failure, escalating to void.');
+      return { status: 'dead', reason: err.message };
+    }
+    
+    if (attempt < MAX_RETRIES) {
+      console.warn(`Retry attempt ${attempt + 1} initiated.`);
+      return new Promise(resolve => {
+        setTimeout(() => resolve(handler(task, attempt + 1)), Math.pow(2, attempt) * 100);
+      });
+    }
+
+    return { status: 'exhausted', error: 'max retries reached' };
   }
 };
 
-const cleanup = (dir) => {
-  fs.readdirSync(dir).forEach(file => {
-    if (file.endsWith('.tmp')) {
-      fs.unlinkSync(path.join(dir, file));
-    }
-  });
+const gracefulWrapper = (fn) => async (...args) => {
+  const result = await handler(() => fn(...args));
+  return result === undefined ? null : result;
 };
 
-module.exports = {
-  bootstrap,
-  cleanup
-};
+module.exports = { gracefulWrapper };
