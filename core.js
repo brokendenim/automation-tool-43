@@ -1,63 +1,59 @@
-class FlowProcessor {
-  constructor(iterable = []) {
-    this.source = Symbol.iterator in Object(iterable) || Symbol.asyncIterator in Object(iterable)
-      ? iterable
-      : [iterable];
-    this.pipeline = [];
+class AdaptiveTaskScheduler {
+  constructor(frameBudgetMs = 16) {
+    this.frameBudgetMs = frameBudgetMs;
+    this.queue = [];
+    this.memoMap = new Map();
+    this.bloomFilter = new Uint8Array(256);
   }
 
-  map(fn) {
-    this.pipeline.push(async function* (stream) {
-      for await (const item of stream) {
-        yield await fn(item);
-      }
+  hash(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) {
+      h = ((h << 5) + h) ^ str.charCodeAt(i);
+    }
+    return (h >>> 0) % 2048;
+  }
+
+  schedule(id, taskFn, ...args) {
+    const key = `${id}:${JSON.stringify(args)}`;
+    const slot = this.hash(key) % 256;
+
+    if ((this.bloomFilter[slot] & 1) && this.memoMap.has(key)) {
+      return Promise.resolve(this.memoMap.get(key));
+    }
+
+    return new Promise((resolve, reject) => {
+      this.queue.push({ key, slot, taskFn, args, resolve, reject });
     });
-    return this;
   }
 
-  filter(predicate) {
-    this.pipeline.push(async function* (stream) {
-      for await (const item of stream) {
-        if (await predicate(item)) yield item;
-      }
-    });
-    return this;
-  }
-
-  flatten() {
-    this.pipeline.push(async function* (stream) {
-      for await (const item of stream) {
-        if (item && (typeof item === 'object' || Array.isArray(item))) {
-          if (Symbol.asyncIterator in item || Symbol.iterator in item) {
-            for await (const inner of item) yield inner;
-            continue;
-          }
+  *drainGenerator() {
+    while (this.queue.length > 0) {
+      const start = performance.now();
+      while (this.queue.length > 0 && performance.now() - start < this.frameBudgetMs) {
+        const { key, slot, taskFn, args, resolve, reject } = this.queue.shift();
+        try {
+          const res = taskFn(...args);
+          this.memoMap.set(key, res);
+          this.bloomFilter[slot] |= 1;
+          resolve(res);
+        } catch (err) {
+          reject(err);
         }
-        yield item;
       }
-    });
-    return this;
+      yield;
+    }
   }
 
-  async collect() {
-    let stream = (async function* (src) {
-      for await (const chunk of src) yield chunk;
-    })(this.source);
-
-    for (const stage of this.pipeline) {
-      stream = stage(stream);
-    }
-
-    const result = [];
-    for await (const value of stream) {
-      result.push(value);
-    }
-    return result;
+  run() {
+    const iterator = this.drainGenerator();
+    const tick = () => {
+      if (!iterator.next().done) {
+        typeof setImmediate !== 'undefined' ? setImmediate(tick) : setTimeout(tick, 0);
+      }
+    };
+    tick();
   }
 }
 
-function createFlow(data) {
-  return new FlowProcessor(data);
-}
-
-module.exports = { FlowProcessor, createFlow };
+module.exports = { AdaptiveTaskScheduler };
