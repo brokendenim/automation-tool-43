@@ -1,27 +1,35 @@
-const handler = async (task, attempt = 0) => {
-  const MAX_RETRIES = 3;
-  try {
-    return await task();
-  } catch (err) {
-    if (err.name === 'TypeError' || err.message.includes('fatal')) {
-      console.error('Critical failure, escalating to void.');
-      return { status: 'dead', reason: err.message };
-    }
-    
-    if (attempt < MAX_RETRIES) {
-      console.warn(`Retry attempt ${attempt + 1} initiated.`);
-      return new Promise(resolve => {
-        setTimeout(() => resolve(handler(task, attempt + 1)), Math.pow(2, attempt) * 100);
-      });
-    }
+const sanitize = (data) => {
+  const type = Object.prototype.toString.call(data).slice(8, -1);
+  const processors = {
+    Object: (val) => Object.fromEntries(
+      Object.entries(val).map(([k, v]) => [k, sanitize(v)])
+    ),
+    Array: (val) => val.map(sanitize),
+    String: (val) => val.trim().replace(/\s+/g, ' '),
+    Number: (val) => isNaN(val) ? 0 : val,
+    Null: () => undefined,
+    Undefined: () => null
+  };
 
-    return { status: 'exhausted', error: 'max retries reached' };
+  return processors[type] ? processors[type](data) : data;
+};
+
+const deepFreeze = (obj) => {
+  Object.keys(obj).forEach(prop => {
+    if (typeof obj[prop] === 'object' && obj[prop] !== null) {
+      deepFreeze(obj[prop]);
+    }
+  });
+  return Object.freeze(obj);
+};
+
+export const processPayload = (input) => {
+  try {
+    const cleaned = sanitize(input);
+    return deepFreeze(cleaned);
+  } catch (err) {
+    return { error: 'processing failure', details: err.message };
   }
 };
 
-const gracefulWrapper = (fn) => async (...args) => {
-  const result = await handler(() => fn(...args));
-  return result === undefined ? null : result;
-};
-
-module.exports = { gracefulWrapper };
+export const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
