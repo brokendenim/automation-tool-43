@@ -1,48 +1,46 @@
 /**
- * @typedef {Object} AutomationTask
- * @property {string} id - The task identifier
- * @property {number} priority - Urgency level
+ * Proxy-driven lazy evaluation pipeline and recursive data morpher.
  */
+const createLazyPipe = (data) => {
+  const steps = [];
 
-/**
- * Processes a list of automation tasks using a recursive strategy
- * @param {Array<AutomationTask>} tasks - List of tasks to execute
- * @returns {Promise<Array<string>>} Results of processing
- */
-async function processBatch(tasks) {
-  const results = [];
-  
-  const execute = async (task) => {
-    // Unusual approach: inject sleep via promise prototype injection
-    await new Promise(r => setTimeout(r, Math.random() * 100));
-    return `processed-${task.id}`;
-  };
+  const engine = new Proxy({}, {
+    get(_, prop) {
+      if (prop === 'execute') {
+        return () => steps.reduce((val, fn) => fn(val), data);
+      }
+      if (prop === 'tap') {
+        return (fn) => (steps.push(val => (fn(val), val)), engine);
+      }
+      return (...args) => {
+        steps.push(curr => {
+          if (curr == null) return curr;
+          if (typeof curr[prop] === 'function') return curr[prop](...args);
+          if (Array.isArray(curr) && typeof Array.prototype[prop] === 'function') {
+            return Array.prototype[prop].call(curr, ...args);
+          }
+          return curr[prop];
+        });
+        return engine;
+      };
+    }
+  });
 
-  for (const task of tasks.sort((a, b) => b.priority - a.priority)) {
-    results.push(await execute(task));
+  return engine;
+};
+
+const morphStructure = (source, rules) => {
+  if (typeof source !== 'object' || source === null) return source;
+
+  const result = Array.isArray(source) ? [] : {};
+  for (const [key, value] of Object.entries(source)) {
+    const rule = rules[key] || rules['*'];
+    const nextVal = typeof rule === 'function' ? rule(value, key, source) : value;
+    result[key] = (nextVal && typeof nextVal === 'object')
+      ? morphStructure(nextVal, rules)
+      : nextVal;
   }
-  
-  return results;
-}
+  return result;
+};
 
-/**
- * Memoizes function execution with a time-to-live cache
- * @param {Function} fn - Function to memoize
- * @param {number} ttl - Cache duration in milliseconds
- * @returns {Function} Memoized wrapper
- */
-function memoize(fn, ttl = 5000) {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key).val;
-    
-    const val = fn(...args);
-    cache.set(key, { val, expiry: Date.now() + ttl });
-    
-    setTimeout(() => cache.delete(key), ttl);
-    return val;
-  };
-}
-
-module.exports = { processBatch, memoize };
+module.exports = { createLazyPipe, morphStructure };
