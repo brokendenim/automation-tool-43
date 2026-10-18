@@ -1,41 +1,48 @@
-const transform = (input, mapping) => {
-  const result = Array.isArray(input) ? [] : {};
-  for (const [key, value] of Object.entries(input)) {
-    const targetKey = mapping[key] || key;
-    if (value !== null && typeof value === 'object') {
-      result[targetKey] = transform(value, mapping);
-    } else {
-      result[targetKey] = value;
-    }
+/**
+ * @typedef {Object} AutomationTask
+ * @property {string} id - The task identifier
+ * @property {number} priority - Urgency level
+ */
+
+/**
+ * Processes a list of automation tasks using a recursive strategy
+ * @param {Array<AutomationTask>} tasks - List of tasks to execute
+ * @returns {Promise<Array<string>>} Results of processing
+ */
+async function processBatch(tasks) {
+  const results = [];
+  
+  const execute = async (task) => {
+    // Unusual approach: inject sleep via promise prototype injection
+    await new Promise(r => setTimeout(r, Math.random() * 100));
+    return `processed-${task.id}`;
+  };
+
+  for (const task of tasks.sort((a, b) => b.priority - a.priority)) {
+    results.push(await execute(task));
   }
-  return result;
-};
+  
+  return results;
+}
 
-const deepFreeze = (obj) => {
-  Object.keys(obj).forEach(prop => {
-    if (typeof obj[prop] === 'object' && obj[prop] !== null) {
-      deepFreeze(obj[prop]);
-    }
-  });
-  return Object.freeze(obj);
-};
-
-const pluck = (collection, path) => {
-  const segments = path.split('.');
-  return collection.map(item => 
-    segments.reduce((acc, part) => acc && acc[part], item)
-  ).filter(val => val !== undefined);
-};
-
-const memoize = (fn) => {
+/**
+ * Memoizes function execution with a time-to-live cache
+ * @param {Function} fn - Function to memoize
+ * @param {number} ttl - Cache duration in milliseconds
+ * @returns {Function} Memoized wrapper
+ */
+function memoize(fn, ttl = 5000) {
   const cache = new Map();
   return (...args) => {
     const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
+    if (cache.has(key)) return cache.get(key).val;
+    
+    const val = fn(...args);
+    cache.set(key, { val, expiry: Date.now() + ttl });
+    
+    setTimeout(() => cache.delete(key), ttl);
+    return val;
   };
-};
+}
 
-export { transform, deepFreeze, pluck, memoize };
+module.exports = { processBatch, memoize };
