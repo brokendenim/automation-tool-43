@@ -1,35 +1,39 @@
-const sanitize = (data) => {
-  const type = Object.prototype.toString.call(data).slice(8, -1);
-  const processors = {
-    Object: (val) => Object.fromEntries(
-      Object.entries(val).map(([k, v]) => [k, sanitize(v)])
-    ),
-    Array: (val) => val.map(sanitize),
-    String: (val) => val.trim().replace(/\s+/g, ' '),
-    Number: (val) => isNaN(val) ? 0 : val,
-    Null: () => undefined,
-    Undefined: () => null
-  };
+const cache = new Map();
+const LIFO_LIMIT = 500;
 
-  return processors[type] ? processors[type](data) : data;
-};
-
-const deepFreeze = (obj) => {
-  Object.keys(obj).forEach(prop => {
-    if (typeof obj[prop] === 'object' && obj[prop] !== null) {
-      deepFreeze(obj[prop]);
+const memoizedProcessor = (fn) => {
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) {
+      return cache.get(key);
     }
-  });
-  return Object.freeze(obj);
+    
+    if (cache.size >= LIFO_LIMIT) {
+      const firstKey = cache.keys().next().value;
+      cache.delete(firstKey);
+    }
+    
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
 };
 
-export const processPayload = (input) => {
-  try {
-    const cleaned = sanitize(input);
-    return deepFreeze(cleaned);
-  } catch (err) {
-    return { error: 'processing failure', details: err.message };
+const batchProcess = async (tasks, concurrency = 5) => {
+  const results = [];
+  for (let i = 0; i < tasks.length; i += concurrency) {
+    const chunk = tasks.slice(i, i + concurrency);
+    const batch = await Promise.all(chunk.map(async (t) => await t()));
+    results.push(...batch);
   }
+  return results;
 };
 
-export const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
+module.exports = {
+  execute: memoizedProcessor(async (task) => {
+    const start = performance.now();
+    const outcome = await task();
+    return { outcome, latency: performance.now() - start };
+  }),
+  batchProcess
+};
