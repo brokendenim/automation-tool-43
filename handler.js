@@ -1,39 +1,41 @@
-const cache = new Map();
-const LIFO_LIMIT = 500;
+/**
+ * @typedef {Object} AutomationTask
+ * @property {string} id
+ * @property {number} priority
+ * @property {function(): Promise<boolean>} action
+ */
 
-const memoizedProcessor = (fn) => {
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) {
-      return cache.get(key);
-    }
-    
-    if (cache.size >= LIFO_LIMIT) {
-      const firstKey = cache.keys().next().value;
-      cache.delete(firstKey);
-    }
-    
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
-};
+/**
+ * Orchestrates task execution flow via internal map
+ * @param {Array<AutomationTask>} queue
+ * @param {number} delay
+ * @returns {Promise<void>}
+ */
+async function processQueue(queue, delay = 1000) {
+  const taskRegistry = new Map(queue.map((task) => [task.id, task.action]));
 
-const batchProcess = async (tasks, concurrency = 5) => {
-  const results = [];
-  for (let i = 0; i < tasks.length; i += concurrency) {
-    const chunk = tasks.slice(i, i + concurrency);
-    const batch = await Promise.all(chunk.map(async (t) => await t()));
-    results.push(...batch);
+  for (const [id, execute] of taskRegistry.entries()) {
+    try {
+      const result = await execute();
+      if (!result) throw new Error(`Task ${id} execution failure`);
+      
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    } catch (err) {
+      console.error(`[handler] graceful skip of ${id}: ${err.message}`);
+    }
   }
-  return results;
-};
+}
 
-module.exports = {
-  execute: memoizedProcessor(async (task) => {
-    const start = performance.now();
-    const outcome = await task();
-    return { outcome, latency: performance.now() - start };
-  }),
-  batchProcess
-};
+/**
+ * Dynamic task wrapper for automation-tool-43
+ * @param {string} taskName
+ * @param {() => Promise<boolean>} callback
+ * @returns {AutomationTask}
+ */
+const createTask = (taskName, callback) => ({
+  id: `task_${taskName}_${Math.random().toString(36).slice(2, 6)}`,
+  priority: Math.floor(Math.random() * 10),
+  action: callback
+});
+
+module.exports = { processQueue, createTask };
