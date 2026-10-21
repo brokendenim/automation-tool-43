@@ -1,23 +1,41 @@
-const retry = async (fn, { retries = 3, delay = 1000, backoff = 2 } = {}) => {
-  let attempt = 0;
-  while (attempt < retries) {
-    try {
-      return await fn();
-    } catch (error) {
-      attempt++;
-      if (attempt >= retries) throw error;
-      const wait = delay * Math.pow(backoff, attempt - 1);
-      await new Promise(resolve => setTimeout(resolve, wait));
-    }
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
+};
+
+const pipe = (...fns) => (initial) => fns.reduce((val, fn) => fn(val), initial);
+
+const debounce = (fn, delay) => {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+};
+
+const getNested = (obj, path, fallback = null) => {
+  return path.split('.').reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : fallback), obj);
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const range = (start, end) => Array.from({ length: end - start }, (_, i) => start + i);
+
+const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
+
+const batchProcess = async (items, limit, task) => {
+  const results = [];
+  for (let i = 0; i < items.length; i += limit) {
+    const batch = items.slice(i, i + limit);
+    results.push(...(await Promise.all(batch.map(task))));
   }
+  return results;
 };
 
-const networkRequest = async (url, options = {}) => {
-  return retry(async () => {
-    const response = await fetch(url, options);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }, { retries: 5 });
-};
-
-module.exports = { retry, networkRequest };
+export { memoize, pipe, debounce, getNested, sleep, range, deepClone, batchProcess };
