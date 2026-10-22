@@ -1,55 +1,57 @@
-async function retryableOperation(fn, options = {}) {
-  const {
-    maxAttempts = 4,
-    baseDelay = 150,
-    factor = 1.4,
-    onRetry = null,
-    shouldRetry = () => true
-  } = options;
+class EdgeCaseShield {
+  static #MAX_DEPTH = 8;
 
-  function* fibonacciJitter() {
-    let [a, b] = [1, 1];
-    while (true) {
-      const jitter = 0.85 + Math.random() * 0.3;
-      yield Math.round(a * jitter);
-      [a, b] = [b, a + b];
+  static sanitize(input, depth = 0, visited = new WeakSet()) {
+    if (input === null || typeof input !== 'object') {
+      return input ?? null;
     }
+    if (depth > this.#MAX_DEPTH || visited.has(input)) {
+      return '[Circular/Max Depth Exceeded]';
+    }
+    visited.add(input);
+
+    const safeObj = Array.isArray(input) ? [] : {};
+    for (const [key, val] of Object.entries(input)) {
+      try {
+        safeObj[key] = typeof val === 'function'
+          ? (...args) => this.guard(() => val(...args))
+          : this.sanitize(val, depth + 1, visited);
+      } catch (err) {
+        safeObj[key] = `[Access Failure: ${err?.message || err}]`;
+      }
+    }
+    return safeObj;
   }
 
-  const seq = fibonacciJitter();
+  static async guard(fn, fallback = null, timeoutMs = 2500) {
+    if (typeof fn !== 'function') {
+      return typeof fallback === 'function' ? fallback(new TypeError('Target is non-callable')) : fallback;
+    }
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-      return await fn(attempt);
-    } catch (error) {
-      if (attempt === maxAttempts || !shouldRetry(error)) {
-        throw error;
-      }
-
-      const multiplier = seq.next().value;
-      const delay = Math.round(baseDelay * Math.pow(factor, attempt - 1) + multiplier * 50);
-
-      if (typeof onRetry === 'function') {
-        onRetry({ attempt, error, delay });
-      }
-
-      await new Promise(resolve => setTimeout(resolve, delay));
+      const result = await Promise.race([
+        Promise.resolve().then(() => fn(controller.signal)),
+        new Promise((_, reject) => {
+          controller.signal.addEventListener('abort', () =>
+            reject(new Error(`Operation aborted due to timeout (${timeoutMs}ms)`))
+          );
+        })
+      ]);
+      return this.sanitize(result);
+    } catch (err) {
+      const errorMeta = {
+        type: err?.name || typeof err,
+        message: err?.message || String(err),
+        timestamp: new Date().toISOString()
+      };
+      return typeof fallback === 'function' ? fallback(errorMeta) : fallback;
+    } finally {
+      clearTimeout(timer);
     }
   }
 }
 
-function createResilientProxy(target, defaultOpts = {}) {
-  return new Proxy(target, {
-    get(obj, prop) {
-      const method = obj[prop];
-      if (typeof method !== 'function') return method;
-
-      return (...args) => retryableOperation(
-        () => method.apply(obj, args),
-        defaultOpts
-      );
-    }
-  });
-}
-
-module.exports = { retryableOperation, createResilientProxy };
+module.exports = { EdgeCaseShield };
