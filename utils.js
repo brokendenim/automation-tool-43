@@ -1,41 +1,55 @@
-const pipeline = (...fns) => (init) => fns.reduce((acc, fn) => fn(acc), init);
+async function retryableOperation(fn, options = {}) {
+  const {
+    maxAttempts = 4,
+    baseDelay = 150,
+    factor = 1.4,
+    onRetry = null,
+    shouldRetry = () => true
+  } = options;
 
-const deepFreeze = (obj) => {
-  Object.keys(obj).forEach((key) => {
-    if (obj[key] && typeof obj[key] === 'object') deepFreeze(obj[key]);
-  });
-  return Object.freeze(obj);
-};
-
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
-};
-
-const debounce = (fn, delay) => {
-  let timeout;
-  return (...args) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), delay);
-  };
-};
-
-const flattenObj = (obj, prefix = '') => {
-  return Object.keys(obj).reduce((acc, k) => {
-    const pre = prefix.length ? prefix + '.' : '';
-    if (typeof obj[k] === 'object' && obj[k] !== null) {
-      Object.assign(acc, flattenObj(obj[k], pre + k));
-    } else {
-      acc[pre + k] = obj[k];
+  function* fibonacciJitter() {
+    let [a, b] = [1, 1];
+    while (true) {
+      const jitter = 0.85 + Math.random() * 0.3;
+      yield Math.round(a * jitter);
+      [a, b] = [b, a + b];
     }
-    return acc;
-  }, {});
-};
+  }
 
-module.exports = { pipeline, deepFreeze, memoize, debounce, flattenObj };
+  const seq = fibonacciJitter();
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn(attempt);
+    } catch (error) {
+      if (attempt === maxAttempts || !shouldRetry(error)) {
+        throw error;
+      }
+
+      const multiplier = seq.next().value;
+      const delay = Math.round(baseDelay * Math.pow(factor, attempt - 1) + multiplier * 50);
+
+      if (typeof onRetry === 'function') {
+        onRetry({ attempt, error, delay });
+      }
+
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
+function createResilientProxy(target, defaultOpts = {}) {
+  return new Proxy(target, {
+    get(obj, prop) {
+      const method = obj[prop];
+      if (typeof method !== 'function') return method;
+
+      return (...args) => retryableOperation(
+        () => method.apply(obj, args),
+        defaultOpts
+      );
+    }
+  });
+}
+
+module.exports = { retryableOperation, createResilientProxy };
