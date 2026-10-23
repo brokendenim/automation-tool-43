@@ -1,39 +1,29 @@
-const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
+const retry = async (fn, { retries = 3, delay = 1000, backoff = 2 } = {}) => {
+  let attempt = 0;
+  let currentDelay = delay;
 
-const deepFreeze = (obj) => {
-  Object.keys(obj).forEach((prop) => {
-    if (typeof obj[prop] === 'object' && obj[prop] !== null) deepFreeze(obj[prop]);
-  });
-  return Object.freeze(obj);
-};
-
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
-};
-
-const retry = async (fn, retries = 3, delay = 1000) => {
-  try {
-    return await fn();
-  } catch (err) {
-    if (retries <= 0) throw err;
-    await new Promise((resolve) => setTimeout(resolve, delay));
-    return retry(fn, retries - 1, delay);
+  while (attempt < retries) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      if (attempt >= retries) throw err;
+      
+      await new Promise(resolve => setTimeout(resolve, currentDelay));
+      currentDelay *= backoff;
+    }
   }
 };
 
-const debounce = (fn, ms) => {
-  let timeoutId;
-  return (...args) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => fn(...args), ms);
-  };
+const withTimeout = (promise, ms) => {
+  const timeout = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('timeout')), ms)
+  );
+  return Promise.race([promise, timeout]);
 };
 
-export { pipe, deepFreeze, memoize, retry, debounce };
+const robustFetch = async (url, options = {}) => {
+  return retry(() => withTimeout(fetch(url, options), 5000));
+};
+
+export { retry, robustFetch };
