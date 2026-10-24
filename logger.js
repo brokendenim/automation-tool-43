@@ -1,22 +1,43 @@
-const validate = (payload) => {
-  const schema = { id: 'number', task: 'string' };
-  return Object.keys(schema).every(k => typeof payload[k] === schema[k]);
+const fs = require('fs');
+
+const validatePayload = (data) => {
+  const schema = ['id', 'payload', 'timestamp'];
+  const keys = Object.keys(data);
+  const isValid = schema.every(key => keys.includes(key) && data[key] !== null);
+  return { isValid, missing: schema.filter(k => !keys.includes(k)) };
 };
 
-const processQueue = (queue) => {
-  const results = [];
-  for (const entry of queue) {
-    try {
-      if (!validate(entry)) {
-        throw new Error(`Invalid entry format: ${JSON.stringify(entry)}`);
-      }
-      results.push({ ...entry, processed: Date.now() });
-    } catch (err) {
-      console.error(`[automation-tool-43] ${err.message}`);
-      continue;
+const logger = {
+  log: (entry) => {
+    const { isValid, missing } = validatePayload(entry);
+    
+    if (!isValid) {
+      console.error(`[CRITICAL] Dropping malformed packet. Missing: ${missing.join(', ')}`);
+      return false;
     }
+
+    const timestamp = new Date(entry.timestamp).toISOString();
+    const line = `[${timestamp}] ${entry.id}: ${JSON.stringify(entry.payload)}\n`;
+    
+    try {
+      fs.appendFileSync('automation.log', line);
+      return true;
+    } catch (err) {
+      process.emitWarning('Disk I/O failure in logger');
+      return false;
+    }
+  },
+  
+  batchProcess: (queue) => {
+    let successCount = 0;
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (logger.log(item)) {
+        successCount++;
+      }
+    }
+    return successCount;
   }
-  return results;
 };
 
-module.exports = { processQueue };
+module.exports = logger;
