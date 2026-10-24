@@ -1,46 +1,69 @@
 /**
- * Proxy-driven lazy evaluation pipeline and recursive data morpher.
+ * @typedef {Object} PipelineStep
+ * @property {(input: any) => any | Promise<any>} fn - Execution unit for step.
+ * @property {number} [retryLimit=0] - Maximum retries on step failure.
+ * @property {number} [delayMs=0] - Execution delay in milliseconds.
  */
-const createLazyPipe = (data) => {
-  const steps = [];
 
-  const engine = new Proxy({}, {
-    get(_, prop) {
-      if (prop === 'execute') {
-        return () => steps.reduce((val, fn) => fn(val), data);
-      }
-      if (prop === 'tap') {
-        return (fn) => (steps.push(val => (fn(val), val)), engine);
-      }
-      return (...args) => {
-        steps.push(curr => {
-          if (curr == null) return curr;
-          if (typeof curr[prop] === 'function') return curr[prop](...args);
-          if (Array.isArray(curr) && typeof Array.prototype[prop] === 'function') {
-            return Array.prototype[prop].call(curr, ...args);
-          }
-          return curr[prop];
-        });
-        return engine;
-      };
-    }
-  });
-
-  return engine;
-};
-
-const morphStructure = (source, rules) => {
-  if (typeof source !== 'object' || source === null) return source;
-
-  const result = Array.isArray(source) ? [] : {};
-  for (const [key, value] of Object.entries(source)) {
-    const rule = rules[key] || rules['*'];
-    const nextVal = typeof rule === 'function' ? rule(value, key, source) : value;
-    result[key] = (nextVal && typeof nextVal === 'object')
-      ? morphStructure(nextVal, rules)
-      : nextVal;
+/**
+ * Resilient dynamic pipeline for workflow data transformations.
+ */
+export class MorphicPipeline {
+  /**
+   * @param {any} [initialValue=null] - Initial seed data.
+   */
+  constructor(initialValue = null) {
+    /** @type {any} */
+    this.seed = initialValue;
+    /** @type {PipelineStep[]} */
+    this.steps = [];
   }
-  return result;
-};
 
-module.exports = { createLazyPipe, morphStructure };
+  /**
+   * Appends a processing step with failure resilience.
+   *
+   * @param {(data: any) => any} transform - Transformation function.
+   * @param {Object} [options] - Step execution flags.
+   * @param {number} [options.retryLimit=0] - Allowed attempt count on error.
+   * @param {number} [options.delayMs=0] - Milliseconds to sleep before run.
+   * @returns {MorphicPipeline} Fluent pipeline instance.
+   */
+  pipe(transform, { retryLimit = 0, delayMs = 0 } = {}) {
+    this.steps.push({ fn: transform, retryLimit, delayMs });
+    return this;
+  }
+
+  /**
+   * Sequentially runs all queued steps against current accumulator.
+   *
+   * @template T
+   * @returns {Promise<T>} Transformed payload output.
+   */
+  async execute() {
+    let acc = this.seed;
+    for (const { fn, retryLimit, delayMs } of this.steps) {
+      if (delayMs > 0) {
+        await new Promise((res) => setTimeout(res, delayMs));
+      }
+      let attempts = 0;
+      while (attempts <= retryLimit) {
+        try {
+          acc = await fn(acc);
+          break;
+        } catch (err) {
+          attempts++;
+          if (attempts > retryLimit) throw err;
+        }
+      }
+    }
+    return acc;
+  }
+}
+
+/**
+ * Instantiates a functional pipeline seed.
+ *
+ * @param {any} seed - Initial state.
+ * @returns {MorphicPipeline} Pipeline instance.
+ */
+export const createPipeline = (seed) => new MorphicPipeline(seed);
