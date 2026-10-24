@@ -1,29 +1,68 @@
-const retry = async (fn, { retries = 3, delay = 1000, backoff = 2 } = {}) => {
-  let attempt = 0;
-  let currentDelay = delay;
-
-  while (attempt < retries) {
-    try {
-      return await fn();
-    } catch (err) {
-      attempt++;
-      if (attempt >= retries) throw err;
-      
-      await new Promise(resolve => setTimeout(resolve, currentDelay));
-      currentDelay *= backoff;
-    }
+class FluentDataLens {
+  constructor(target = {}) {
+    this.target = target;
   }
-};
 
-const withTimeout = (promise, ms) => {
-  const timeout = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error('timeout')), ms)
-  );
-  return Promise.race([promise, timeout]);
-};
+  static wrap(obj) {
+    return new FluentDataLens(obj);
+  }
 
-const robustFetch = async (url, options = {}) => {
-  return retry(() => withTimeout(fetch(url, options), 5000));
-};
+  *query(pathPattern) {
+    const segments = typeof pathPattern === 'string' ? pathPattern.split('.') : pathPattern;
+    
+    function* walk(curr, depth) {
+      if (depth === segments.length) {
+        yield curr;
+        return;
+      }
+      if (!curr || typeof curr !== 'object') return;
 
-export { retry, robustFetch };
+      const seg = segments[depth];
+      if (seg === '*') {
+        for (const key of Object.keys(curr)) {
+          yield* walk(curr[key], depth + 1);
+        }
+      } else if (seg in curr) {
+        yield* walk(curr[seg], depth + 1);
+      }
+    }
+
+    yield* walk(this.target, 0);
+  }
+
+  findAll(pathPattern) {
+    return Array.from(this.query(pathPattern));
+  }
+
+  transform(pathPattern, mapper) {
+    const segments = typeof pathPattern === 'string' ? pathPattern.split('.') : pathPattern;
+    const mutate = (curr, depth) => {
+      if (!curr || typeof curr !== 'object') return curr;
+      const seg = segments[depth];
+
+      if (depth === segments.length - 1) {
+        if (seg === '*') {
+          Object.keys(curr).forEach(k => { curr[k] = mapper(curr[k], k); });
+        } else if (seg in curr) {
+          curr[seg] = mapper(curr[seg], seg);
+        }
+        return curr;
+      }
+
+      if (seg === '*') {
+        Object.keys(curr).forEach(k => mutate(curr[k], depth + 1));
+      } else if (seg in curr) {
+        mutate(curr[seg], depth + 1);
+      }
+      return curr;
+    };
+
+    mutate(this.target, 0);
+    return this.target;
+  }
+}
+
+module.exports = {
+  lens: (obj) => FluentDataLens.wrap(obj),
+  FluentDataLens
+};
