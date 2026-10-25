@@ -1,42 +1,28 @@
 const fs = require('fs');
+const path = require('path');
 
-const validatePayload = (data) => {
-  const schema = ['id', 'payload', 'timestamp'];
-  const keys = Object.keys(data);
-  const isValid = schema.every(key => keys.includes(key) && data[key] !== null);
-  return { isValid, missing: schema.filter(k => !keys.includes(k)) };
+const LOG_FILE = 'automation-tool-43.log';
+const MAX_SIZE = 1024 * 512;
+
+const rotate = () => {
+  if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_SIZE) {
+    const timestamp = Date.now();
+    fs.renameSync(LOG_FILE, `${LOG_FILE}.${timestamp}.bak`);
+  }
 };
 
 const logger = {
-  log: (entry) => {
-    const { isValid, missing } = validatePayload(entry);
-    
-    if (!isValid) {
-      console.error(`[CRITICAL] Dropping malformed packet. Missing: ${missing.join(', ')}`);
-      return false;
-    }
-
-    const timestamp = new Date(entry.timestamp).toISOString();
-    const line = `[${timestamp}] ${entry.id}: ${JSON.stringify(entry.payload)}\n`;
-    
-    try {
-      fs.appendFileSync('automation.log', line);
-      return true;
-    } catch (err) {
-      process.emitWarning('Disk I/O failure in logger');
-      return false;
-    }
+  info: (msg) => {
+    rotate();
+    const entry = `[${new Date().toISOString()}] INFO: ${msg}\n`;
+    process.stdout.write(entry);
+    fs.appendFileSync(LOG_FILE, entry);
   },
-  
-  batchProcess: (queue) => {
-    let successCount = 0;
-    while (queue.length > 0) {
-      const item = queue.shift();
-      if (logger.log(item)) {
-        successCount++;
-      }
-    }
-    return successCount;
+  error: (msg) => {
+    rotate();
+    const entry = `[${new Date().toISOString()}] ERROR: ${msg}\n`;
+    process.stderr.write(entry);
+    fs.appendFileSync(LOG_FILE, entry);
   }
 };
 
