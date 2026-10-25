@@ -1,29 +1,41 @@
 const fs = require('fs');
 const path = require('path');
 
-const LOG_FILE = 'automation-tool-43.log';
-const MAX_SIZE = 1024 * 512;
+const Logger = {
+  level: process.env.LOG_LEVEL || 'info',
+  levels: { debug: 0, info: 1, warn: 2, error: 3 },
+  
+  format: (msg, lvl) => `[${new Date().toISOString()}] [${lvl.toUpperCase()}]: ${msg}`,
 
-const rotate = () => {
-  if (fs.existsSync(LOG_FILE) && fs.statSync(LOG_FILE).size > MAX_SIZE) {
-    const timestamp = Date.now();
-    fs.renameSync(LOG_FILE, `${LOG_FILE}.${timestamp}.bak`);
-  }
-};
-
-const logger = {
-  info: (msg) => {
-    rotate();
-    const entry = `[${new Date().toISOString()}] INFO: ${msg}\n`;
-    process.stdout.write(entry);
-    fs.appendFileSync(LOG_FILE, entry);
+  write: (msg, lvl) => {
+    if (Logger.levels[lvl] < Logger.levels[Logger.level]) return;
+    const logEntry = Logger.format(msg, lvl);
+    console.log(logEntry);
+    try {
+      fs.appendFileSync(path.join(__dirname, 'app.log'), logEntry + '\n');
+    } catch (e) {
+      console.error('File system write access restricted');
+    }
   },
-  error: (msg) => {
-    rotate();
-    const entry = `[${new Date().toISOString()}] ERROR: ${msg}\n`;
-    process.stderr.write(entry);
-    fs.appendFileSync(LOG_FILE, entry);
+
+  debug: (m) => Logger.write(m, 'debug'),
+  info: (m) => Logger.write(m, 'info'),
+  warn: (m) => Logger.write(m, 'warn'),
+  error: (m) => Logger.write(m, 'error'),
+
+  tap: (label) => (val) => {
+    Logger.info(`${label}: ${JSON.stringify(val)}`);
+    return val;
+  },
+
+  asyncWrapper: (fn) => async (...args) => {
+    try {
+      return await fn(...args);
+    } catch (err) {
+      Logger.error(`Execution failure: ${err.message}`);
+      throw err;
+    }
   }
 };
 
-module.exports = logger;
+module.exports = Logger;
