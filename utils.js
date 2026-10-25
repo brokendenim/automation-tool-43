@@ -1,68 +1,64 @@
-class FluentDataLens {
-  constructor(target = {}) {
-    this.target = target;
+class FlexiData {
+  constructor(data) {
+    this.target = Object.freeze(JSON.parse(JSON.stringify(data)));
   }
 
-  static wrap(obj) {
-    return new FluentDataLens(obj);
+  get(path, fallback = undefined) {
+    const parts = Array.isArray(path) ? path : String(path).split('.').filter(Boolean);
+    let current = this.target;
+    for (const key of parts) {
+      if (current === null || current === undefined) return fallback;
+      current = Reflect.get(Object(current), key);
+    }
+    return current === undefined ? fallback : current;
   }
 
-  *query(pathPattern) {
-    const segments = typeof pathPattern === 'string' ? pathPattern.split('.') : pathPattern;
-    
-    function* walk(curr, depth) {
-      if (depth === segments.length) {
-        yield curr;
-        return;
-      }
-      if (!curr || typeof curr !== 'object') return;
-
-      const seg = segments[depth];
-      if (seg === '*') {
-        for (const key of Object.keys(curr)) {
-          yield* walk(curr[key], depth + 1);
+  *entries(obj = this.target, prefix = '') {
+    if (obj && typeof obj === 'object') {
+      for (const [k, v] of Object.entries(obj)) {
+        const newKey = prefix ? `${prefix}.${k}` : k;
+        if (v && typeof v === 'object' && !(v instanceof Date) && !(v instanceof RegExp)) {
+          yield* this.entries(v, newKey);
+        } else {
+          yield [newKey, v];
         }
-      } else if (seg in curr) {
-        yield* walk(curr[seg], depth + 1);
       }
     }
-
-    yield* walk(this.target, 0);
   }
 
-  findAll(pathPattern) {
-    return Array.from(this.query(pathPattern));
-  }
-
-  transform(pathPattern, mapper) {
-    const segments = typeof pathPattern === 'string' ? pathPattern.split('.') : pathPattern;
-    const mutate = (curr, depth) => {
-      if (!curr || typeof curr !== 'object') return curr;
-      const seg = segments[depth];
-
-      if (depth === segments.length - 1) {
-        if (seg === '*') {
-          Object.keys(curr).forEach(k => { curr[k] = mapper(curr[k], k); });
-        } else if (seg in curr) {
-          curr[seg] = mapper(curr[seg], seg);
+  static hydrate(flatEntries, morpher = (v) => v) {
+    const result = {};
+    for (const [path, value] of flatEntries) {
+      const keys = path.split('.');
+      let current = result;
+      keys.forEach((key, index) => {
+        if (index === keys.length - 1) {
+          current[key] = morpher(value, path);
+        } else {
+          current[key] = current[key] || {};
+          current = current[key];
         }
-        return curr;
-      }
+      });
+    }
+    return result;
+  }
 
-      if (seg === '*') {
-        Object.keys(curr).forEach(k => mutate(curr[k], depth + 1));
-      } else if (seg in curr) {
-        mutate(curr[seg], depth + 1);
+  transform(rules) {
+    const flatMap = Array.from(this.entries());
+    const transformed = flatMap.map(([path, val]) => {
+      for (const [pattern, fn] of Object.entries(rules)) {
+        const regex = new RegExp(`^${pattern.replace(/\*/g, '.*')}$`);
+        if (regex.test(path)) {
+          return [path, fn(val, path)];
+        }
       }
-      return curr;
-    };
-
-    mutate(this.target, 0);
-    return this.target;
+      return [path, val];
+    });
+    return FlexiData.hydrate(transformed);
   }
 }
 
 module.exports = {
-  lens: (obj) => FluentDataLens.wrap(obj),
-  FluentDataLens
+  flexiData: (data) => new FlexiData(data),
+  FlexiData
 };
