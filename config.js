@@ -1,31 +1,37 @@
+const fs = require('fs');
 const path = require('path');
 
-const safeConfigLoader = (configPath) => {
+const deepMerge = (target, source) => {
+  for (const key in source) {
+    if (source[key] instanceof Object && key in target) {
+      Object.assign(source[key], deepMerge(target[key], source[key]));
+    }
+  }
+  return { ...target, ...source };
+};
+
+const loadConfig = (filePath, defaults = {}) => {
   try {
-    if (!configPath || typeof configPath !== 'string') {
-      throw new Error('invalid_path_type');
-    }
-    return require(path.resolve(configPath));
-  } catch (err) {
-    const errorMap = {
-      MODULE_NOT_FOUND: { status: 404, fallback: {} },
-      EACCES: { status: 403, fallback: { secure: true } },
-      invalid_path_type: { status: 400, fallback: { local: true } }
-    };
-
-    const recovery = errorMap[err.code] || { status: 500, fallback: null };
+    const absolutePath = path.resolve(process.cwd(), filePath);
+    const fileContent = fs.existsSync(absolutePath) 
+      ? JSON.parse(fs.readFileSync(absolutePath, 'utf8')) 
+      : {};
     
-    if (!recovery.fallback) {
-      process.stderr.write(`[CRITICAL] Config failed: ${err.message}\n`);
-      process.exit(1);
-    }
-
-    console.warn(`[RECOVERY] Status ${recovery.status} - Applying safe defaults`);
-    return recovery.fallback;
+    return deepMerge(defaults, fileContent);
+  } catch (err) {
+    return defaults;
   }
 };
 
-module.exports = {
-  load: safeConfigLoader,
-  timestamp: Date.now()
+const initAutomationConfig = (overrides) => {
+  const base = {
+    retries: 3,
+    timeout: 5000,
+    paths: { input: './in', output: './out' },
+    debug: false
+  };
+  
+  return loadConfig('config.json', deepMerge(base, overrides));
 };
+
+module.exports = { initAutomationConfig };
