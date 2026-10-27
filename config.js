@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const deepMerge = (target, source) => {
-  for (const key in source) {
+  for (const key of Object.keys(source)) {
     if (source[key] instanceof Object && key in target) {
       Object.assign(source[key], deepMerge(target[key], source[key]));
     }
@@ -10,28 +10,15 @@ const deepMerge = (target, source) => {
   return { ...target, ...source };
 };
 
-const loadConfig = (filePath, defaults = {}) => {
+const loadConfig = (userPath, defaults = {}) => {
   try {
-    const absolutePath = path.resolve(process.cwd(), filePath);
-    const fileContent = fs.existsSync(absolutePath) 
-      ? JSON.parse(fs.readFileSync(absolutePath, 'utf8')) 
-      : {};
-    
-    return deepMerge(defaults, fileContent);
+    const fullPath = path.resolve(process.cwd(), userPath);
+    const fileContent = fs.readFileSync(fullPath, 'utf8');
+    const userConfig = JSON.parse(fileContent);
+    return deepMerge(defaults, userConfig);
   } catch (err) {
     return defaults;
   }
 };
 
-const initAutomationConfig = (overrides) => {
-  const base = {
-    retries: 3,
-    timeout: 5000,
-    paths: { input: './in', output: './out' },
-    debug: false
-  };
-  
-  return loadConfig('config.json', deepMerge(base, overrides));
-};
-
-module.exports = { initAutomationConfig };
+module.exports = { loadConfig };
