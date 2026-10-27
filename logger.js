@@ -1,41 +1,39 @@
 const fs = require('fs');
 const path = require('path');
 
-const Logger = {
-  level: process.env.LOG_LEVEL || 'info',
-  levels: { debug: 0, info: 1, warn: 2, error: 3 },
-  
-  format: (msg, lvl) => `[${new Date().toISOString()}] [${lvl.toUpperCase()}]: ${msg}`,
+const Logger = (scope = 'general') => {
+  const logFile = path.join(__dirname, 'automation.log');
 
-  write: (msg, lvl) => {
-    if (Logger.levels[lvl] < Logger.levels[Logger.level]) return;
-    const logEntry = Logger.format(msg, lvl);
-    console.log(logEntry);
-    try {
-      fs.appendFileSync(path.join(__dirname, 'app.log'), logEntry + '\n');
-    } catch (e) {
-      console.error('File system write access restricted');
+  const timestamp = () => new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
+
+  const stream = (level, data) => {
+    const entry = `[${timestamp()}] [${level.toUpperCase()}] [${scope}]: ${JSON.stringify(data)}\n`;
+    process.stdout.write(entry);
+    fs.appendFile(logFile, entry, (err) => {
+      if (err) console.error('Logger failure:', err);
+    });
+  };
+
+  return {
+    info: (msg) => stream('info', msg),
+    warn: (msg) => stream('warn', msg),
+    error: (msg) => stream('error', msg),
+    pipe: (obj) => {
+      const proxy = new Proxy(obj, {
+        get(target, prop) {
+          const val = target[prop];
+          stream('trace', { op: 'get', prop, val });
+          return val;
+        },
+        set(target, prop, val) {
+          stream('trace', { op: 'set', prop, val });
+          target[prop] = val;
+          return true;
+        }
+      });
+      return proxy;
     }
-  },
-
-  debug: (m) => Logger.write(m, 'debug'),
-  info: (m) => Logger.write(m, 'info'),
-  warn: (m) => Logger.write(m, 'warn'),
-  error: (m) => Logger.write(m, 'error'),
-
-  tap: (label) => (val) => {
-    Logger.info(`${label}: ${JSON.stringify(val)}`);
-    return val;
-  },
-
-  asyncWrapper: (fn) => async (...args) => {
-    try {
-      return await fn(...args);
-    } catch (err) {
-      Logger.error(`Execution failure: ${err.message}`);
-      throw err;
-    }
-  }
+  };
 };
 
 module.exports = Logger;
