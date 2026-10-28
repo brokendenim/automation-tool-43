@@ -1,24 +1,73 @@
 const fs = require('fs');
 const path = require('path');
 
-const deepMerge = (target, source) => {
-  for (const key of Object.keys(source)) {
-    if (source[key] instanceof Object && key in target) {
-      Object.assign(source[key], deepMerge(target[key], source[key]));
+const DEFAULTS = Object.freeze({
+  app: {
+    name: 'automation-tool-43',
+    env: '$NODE_ENV',
+    concurrency: 4,
+    verbose: false
+  },
+  storage: {
+    tempDir: '/tmp/auto-43',
+    maxRetries: 3
+  },
+  hooks: []
+});
+
+class ConfigLoader {
+  #store;
+
+  constructor(customPath = null) {
+    const fileData = this.#readConfigFile(customPath);
+    this.#store = this.#deepMerge(DEFAULTS, fileData);
+    return this.#createCascadingProxy(this.#store);
+  }
+
+  #readConfigFile(filePath) {
+    if (!filePath) return {};
+    try {
+      const resolved = path.resolve(filePath);
+      if (!fs.existsSync(resolved)) return {};
+      const content = fs.readFileSync(resolved, 'utf8');
+      return JSON.parse(content);
+    } catch {
+      return {};
     }
   }
-  return { ...target, ...source };
-};
 
-const loadConfig = (userPath, defaults = {}) => {
-  try {
-    const fullPath = path.resolve(process.cwd(), userPath);
-    const fileContent = fs.readFileSync(fullPath, 'utf8');
-    const userConfig = JSON.parse(fileContent);
-    return deepMerge(defaults, userConfig);
-  } catch (err) {
-    return defaults;
+  #deepMerge(target, source) {
+    const result = { ...target };
+    for (const [key, val] of Object.entries(source || {})) {
+      if (val && typeof val === 'object' && !Array.isArray(val) && result[key]) {
+        result[key] = this.#deepMerge(result[key], val);
+      } else if (val !== undefined) {
+        result[key] = val;
+      }
+    }
+    return result;
   }
-};
 
-module.exports = { loadConfig };
+  #createCascadingProxy(obj) {
+    return new Proxy(obj, {
+      get: (target, prop) => {
+        if (prop in target) {
+          const val = target[prop];
+          if (typeof val === 'string' && val.startsWith('$')) {
+            const envKey = val.slice(1);
+            return process.env[envKey] ?? val;
+          }
+          if (val && typeof val === 'object' && !Array.isArray(val)) {
+            return this.#createCascadingProxy(val);
+          }
+          return val;
+        }
+        return undefined;
+      }
+    });
+  }
+}
+
+module.exports = function loadConfig(filePath) {
+  return new ConfigLoader(filePath);
+};
