@@ -1,41 +1,57 @@
-const safeExecute = (fn, fallback = null) => {
-  return (...args) => {
-    try {
-      const result = fn(...args);
-      if (result instanceof Promise) {
-        return result.catch(err => {
-          console.error('[automation-tool-43] Async failure:', err.message);
-          return fallback;
-        });
-      }
-      return result;
-    } catch (err) {
-      console.warn('[automation-tool-43] Sync failure handled:', err.message);
-      return typeof fallback === 'function' ? fallback(err) : fallback;
-    }
-  };
-};
-
-const deepResilience = (obj, path, defaultValue) => {
-  const keys = path.split('.');
-  return keys.reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : defaultValue), obj);
-};
-
-const gracefulBatch = async (tasks, concurrency = 2) => {
-  const results = [];
-  for (let i = 0; i < tasks.length; i += concurrency) {
-    const chunk = tasks.slice(i, i + concurrency);
-    const batch = await Promise.allSettled(chunk.map(t => t()));
-    batch.forEach((res, idx) => {
-      if (res.status === 'rejected') {
-        console.error(`Task ${i + idx} failed, using partial state`);
-        results.push({ error: true, reason: res.reason });
-      } else {
-        results.push(res.value);
-      }
-    });
+function* jitteredExponentialBackoff(baseMs = 100, maxMs = 5000, factor = 2) {
+  let current = baseMs;
+  while (true) {
+    const jitter = Math.random() * current * 0.5;
+    yield Math.min(maxMs, current + jitter);
+    current *= factor;
   }
-  return results;
-};
+}
 
-module.exports = { safeExecute, deepResilience, gracefulBatch };
+export async function executeWithRetry(asyncTask, options = {}) {
+  const {
+    maxAttempts = 5,
+    backoffGenerator = jitteredExponentialBackoff,
+    shouldRetry = () => true,
+    onRetry = null
+  } = options;
+
+  const delaySequence = backoffGenerator();
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await asyncTask(attempt);
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts || !shouldRetry(error)) {
+        break;
+      }
+
+      const delay = delaySequence.next().value;
+      if (typeof onRetry === 'function') {
+        onRetry({ attempt, error, nextDelayMs: Math.round(delay) });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  const errorMsg = lastError?.message || String(lastError);
+  throw new Error(`Operation failed after ${maxAttempts} attempts: ${errorMsg}`);
+}
+
+export function createRetryProxy(targetObj, defaultRetryOptions = {}) {
+  return new Proxy(targetObj, {
+    get(target, propKey) {
+      const origMethod = target[propKey];
+      if (typeof origMethod !== 'function') return origMethod;
+
+      return function (...args) {
+        return executeWithRetry(
+          () => origMethod.apply(target, args),
+          defaultRetryOptions
+        );
+      };
+    }
+  });
+}
