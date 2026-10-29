@@ -1,55 +1,53 @@
 # automation-tool-43
 
-`automation-tool-43` is a lightweight, high-performance JavaScript engine designed to streamline repetitive cross-platform task execution. It empowers developers to automate complex workflows using simple, chainable configuration files.
+Automation-tool-43 is a lightweight, high-performance Node.js utility designed to streamline repetitive task execution through customizable workflow configurations. It enables developers to orchestrate complex sequences of shell commands and file operations with minimal boilerplate.
+
+## Features
+
+*   **Task Chaining:** Execute multiple dependent scripts in a predefined sequence with automatic exit-on-failure handling.
+*   **Dynamic Variable Injection:** Pass environment-specific variables directly into your automation pipelines via JSON configuration.
+*   **Zero-Dependency Core:** Built using native Node.js modules to ensure a tiny footprint and maximum security.
+*   **Watch Mode:** Automatically trigger predefined routines whenever local file changes are detected.
+
+## Installation
+
+Ensure you have [Node.js](https://nodejs.org/) (v16.x or higher) installed. Install the tool globally via npm:
+
+```bash
+npm install -g automation-tool-43
+```
+
+Alternatively, add it to your project as a development dependency:
+
+```bash
+npm install --save-dev automation-tool-43
+```
+
+## Usage
+
+Create an `automation.config.json` file in your root directory:
+
+```json
+{
+  "tasks": {
+    "build": ["npm run clean", "npm run compile"],
+    "deploy": ["npm run test", "node ./scripts/upload.js"]
+  }
+}
+```
+
+Run a specific task from your terminal:
+
+```bash
+# Run the build task
+automation-tool-43 run build
+
+# Run with watch mode enabled
+automation-tool-43 watch deploy
+```
+
+## License
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-### Features
-
-*   **Task Chaining:** Execute multi-step operations sequentially with built-in error handling and state persistence.
-*   **Dynamic Scheduler:** Schedule high-frequency tasks with precise interval control or cron-based timing.
-*   **Event-Driven Hooks:** Integrate custom lifecycle callbacks for pre-execution validation and post-execution cleanup.
-*   **Low-Memory Footprint:** Optimized for asynchronous I/O, ensuring minimal overhead when running concurrent background processes.
-
-### Installation
-
-Ensure you have [Node.js](https://nodejs.org/) installed (v16.0.0 or higher). Install the package globally or add it to your project:
-
-```bash
-# Via npm
-npm install automation-tool-43
-
-# Via yarn
-yarn add automation-tool-43
-```
-
-### Usage
-
-Create an `automate.config.js` file and define your task pipeline:
-
-```javascript
-const runner = require('automation-tool-43');
-
-const tasks = [
-  { name: 'Cleanup', action: () => console.log('Cleaning directories...') },
-  { name: 'Deploy', action: () => console.log('Deploying assets...') }
-];
-
-runner.execute(tasks, { interval: '5m' });
-```
-
-Run the tool from your terminal:
-
-```bash
-npx automation-tool-43 --config automate.config.js
-```
-
-### Requirements
-- Node.js >= 16.0.0
-- npm or yarn
-
-### Contributing
-Contributions are welcome. Please open an issue to discuss proposed changes or submit a pull request for bug fixes.
-
-### License
-Distributed under the MIT License. See `LICENSE` for more information.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
