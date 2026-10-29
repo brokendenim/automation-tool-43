@@ -1,57 +1,49 @@
-function* jitteredExponentialBackoff(baseMs = 100, maxMs = 5000, factor = 2) {
-  let current = baseMs;
-  while (true) {
-    const jitter = Math.random() * current * 0.5;
-    yield Math.min(maxMs, current + jitter);
-    current *= factor;
+class DynamicDataTransformer {
+  constructor(data) {
+    this.store = Symbol('store');
+    this[this.store] = JSON.parse(JSON.stringify(data));
+    this.transforms = new Map();
+  }
+
+  registerRule(key, fn) {
+    if (typeof fn === 'function') {
+      this.transforms.set(key, fn);
+    }
+    return this;
+  }
+
+  applyTransforms() {
+    const result = { ...this[this.store] };
+    for (const [key, fn] of this.transforms.entries()) {
+      if (key in result) {
+        result[key] = fn(result[key], result);
+      }
+    }
+    return result;
+  }
+
+  createProxy() {
+    return new Proxy(this, {
+      get: (target, prop) => {
+        if (prop in target) return target[prop];
+        return target[this.store][prop];
+      },
+      set: (target, prop, value) => {
+        if (target.transforms.has(prop)) {
+          target[this.store][prop] = target.transforms.get(prop)(value, target[this.store]);
+        } else {
+          target[this.store][prop] = value;
+        }
+        return true;
+      }
+    });
   }
 }
 
-export async function executeWithRetry(asyncTask, options = {}) {
-  const {
-    maxAttempts = 5,
-    backoffGenerator = jitteredExponentialBackoff,
-    shouldRetry = () => true,
-    onRetry = null
-  } = options;
-
-  const delaySequence = backoffGenerator();
-  let lastError;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await asyncTask(attempt);
-    } catch (error) {
-      lastError = error;
-      if (attempt === maxAttempts || !shouldRetry(error)) {
-        break;
-      }
-
-      const delay = delaySequence.next().value;
-      if (typeof onRetry === 'function') {
-        onRetry({ attempt, error, nextDelayMs: Math.round(delay) });
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-
-  const errorMsg = lastError?.message || String(lastError);
-  throw new Error(`Operation failed after ${maxAttempts} attempts: ${errorMsg}`);
+function processAutomationData(payload, rules = {}) {
+  const transformer = new DynamicDataTransformer(payload);
+  Object.entries(rules).forEach(([key, rule]) => transformer.registerRule(key, rule));
+  return transformer.createProxy();
 }
 
-export function createRetryProxy(targetObj, defaultRetryOptions = {}) {
-  return new Proxy(targetObj, {
-    get(target, propKey) {
-      const origMethod = target[propKey];
-      if (typeof origMethod !== 'function') return origMethod;
-
-      return function (...args) {
-        return executeWithRetry(
-          () => origMethod.apply(target, args),
-          defaultRetryOptions
-        );
-      };
-    }
-  });
-}
+module.exports = { DynamicDataTransformer, processAutomationData };
