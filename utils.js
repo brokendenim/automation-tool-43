@@ -1,32 +1,36 @@
-const validateInput = (input, schema) => {
-  const results = { valid: true, errors: [] };
-  
-  for (const [key, rules] of Object.entries(schema)) {
-    const value = input[key];
-    if (rules.required && (value === undefined || value === null)) {
-      results.valid = false;
-      results.errors.push(`missing field: ${key}`);
-    } else if (value !== undefined && rules.test && !rules.test(value)) {
-      results.valid = false;
-      results.errors.push(`invalid constraint: ${key}`);
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
+};
+
+const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
+
+const retry = async (fn, attempts = 3, interval = 1000) => {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === attempts - 1) throw err;
+      await delay(interval);
     }
   }
-  return results;
 };
 
-const schema = {
-  id: { required: true, test: (v) => typeof v === 'number' },
-  task: { required: true, test: (v) => v.length > 3 },
-  priority: { required: false, test: (v) => ['low', 'high'].includes(v) }
+const shuffle = (arr) => arr.sort(() => Math.random() - 0.5);
+
+const getNested = (obj, path, fallback = null) => {
+  const keys = path.split('.');
+  return keys.reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : fallback), obj);
 };
 
-export const processLoop = (items) => {
-  return items.map((item) => {
-    const check = validateInput(item, schema);
-    if (!check.valid) {
-      console.error(`Skipping item ${item.id}:`, check.errors);
-      return null;
-    }
-    return { ...item, processed: Date.now() };
-  }).filter(Boolean);
-};
+module.exports = { memoize, pipe, delay, deepClone, retry, shuffle, getNested };
