@@ -1,68 +1,63 @@
-const fs = require('fs');
-const path = require('path');
-const { EventEmitter } = require('events');
+class ResilientLogger {
+  #seenSet = new WeakSet();
+  #maxDepth = 4;
 
-class QuantumLogger extends EventEmitter {
-  constructor(opts = {}) {
-    super();
-    this.dir = opts.dir || './logs';
-    this.maxBytes = opts.maxBytes || 1024 * 5;
-    this.maxFiles = opts.maxFiles || 3;
-    this.currentSize = 0;
-    this.stream = null;
-
-    if (!fs.existsSync(this.dir)) fs.mkdirSync(this.dir, { recursive: true });
-    this._initStream();
+  constructor(options = {}) {
+    this.fallbackStream = options.fallback || console.log;
+    return new Proxy(this, {
+      get: (target, prop) => {
+        if (prop in target) return target[prop];
+        return (...args) => target.log('INFO', `[${String(prop)}]`, ...args);
+      }
+    });
   }
 
-  _getLogPath(index = 0) {
-    return path.join(this.dir, `app${index ? `.${index}` : ''}.log`);
-  }
-
-  _rotate() {
-    if (this.stream) this.stream.end();
-    for (let i = this.maxFiles - 1; i >= 0; i--) {
-      const src = this._getLogPath(i);
-      const dest = this._getLogPath(i + 1);
-      if (fs.existsSync(src)) {
-        if (i + 1 >= this.maxFiles) fs.unlinkSync(src);
-        else fs.renameSync(src, dest);
+  #serialize(arg, depth = 0) {
+    if (depth > this.#maxDepth) return '[Truncated Depth]';
+    if (arg === null || arg === undefined) return String(arg);
+    if (typeof arg === 'bigint') return `${arg.toString()}n`;
+    if (typeof arg === 'symbol') return arg.toString();
+    if (typeof arg === 'function') return `[Function: ${arg.name || 'anonymous'}]`;
+    if (arg instanceof Error) {
+      return {
+        name: arg.name || 'UnknownError',
+        message: arg.message || 'No error message',
+        stack: (arg.stack || '').split('\
+').slice(0, 3).join('\
+')
+      };
+    }
+    if (typeof arg === 'object') {
+      if (this.#seenSet.has(arg)) return '[Circular Reference]';
+      this.#seenSet.add(arg);
+      try {
+        const copy = Array.isArray(arg) ? [] : {};
+        for (const key of Reflect.ownKeys(arg)) {
+          copy[String(key)] = this.#serialize(arg[key], depth + 1);
+        }
+        return copy;
+      } catch (err) {
+        return `[Unserializable: ${err.message}]`;
       }
     }
-    this._initStream();
+    return arg;
   }
 
-  _initStream() {
-    const target = this._getLogPath(0);
-    this.currentSize = fs.existsSync(target) ? fs.statSync(target).size : 0;
-    this.stream = fs.createWriteStream(target, { flags: 'a' });
-  }
-
-  write(level, msg, context = {}) {
-    const payload = JSON.stringify({
-      ts: new Date().toISOString(),
-      lvl: level,
-      msg,
-      ...context
-    }) + '\n';
-    const bytes = Buffer.byteLength(payload);
-
-    if (this.currentSize + bytes >= this.maxBytes) {
-      this._rotate();
+  log(level, ...args) {
+    const timestamp = new Date().toISOString();
+    try {
+      const processed = args.map(a => this.#serialize(a));
+      const payload = JSON.stringify({ timestamp, level, payload: processed });
+      this.fallbackStream(payload);
+    } catch (fatalError) {
+      try {
+        console.error('Logger panic mode:', fatalError.message);
+        this.fallbackStream(`[PANIC] ${timestamp} - Degraded logging triggered`);
+      } catch {
+        // Fallback for extreme memory pressure or stdout failures
+      }
     }
-
-    this.stream.write(payload);
-    this.currentSize += bytes;
-    this.emit('logged', { level, msg });
   }
 }
 
-const loggerInstance = new QuantumLogger();
-module.exports = new Proxy(loggerInstance, {
-  get(target, prop) {
-    if (['info', 'warn', 'error', 'debug'].includes(prop)) {
-      return (msg, ctx) => target.write(prop.toUpperCase(), msg, ctx);
-    }
-    return Reflect.get(target, prop);
-  }
-});
+module.exports = new ResilientLogger();
