@@ -1,36 +1,56 @@
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
-};
+function* fibonacciJitterBackoff(baseMs = 100, maxMs = 10000) {
+  let prev = 0;
+  let curr = 1;
+  while (true) {
+    const next = prev + curr;
+    prev = curr;
+    curr = next;
+    const rawDelay = Math.min(curr * baseMs, maxMs);
+    const jitter = rawDelay * (Math.random() * 0.5 - 0.25);
+    yield Math.max(0, Math.floor(rawDelay + jitter));
+  }
+}
 
-const pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
+export async function retryNetworkOp(task, options = {}) {
+  const {
+    maxAttempts = 5,
+    baseMs = 200,
+    maxMs = 8000,
+    shouldRetry = (err) => err?.status >= 500 || err?.code === 'ECONNRESET' || !err?.status,
+    onRetry = () => {}
+  } = options;
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const backoffStream = fibonacciJitterBackoff(baseMs, maxMs);
+  let attempt = 0;
 
-const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
-
-const retry = async (fn, attempts = 3, interval = 1000) => {
-  for (let i = 0; i < attempts; i++) {
+  while (true) {
+    attempt++;
     try {
-      return await fn();
-    } catch (err) {
-      if (i === attempts - 1) throw err;
-      await delay(interval);
+      return await task({ attempt });
+    } catch (error) {
+      if (attempt >= maxAttempts || !shouldRetry(error)) {
+        throw error;
+      }
+      const delay = backoffStream.next().value;
+      onRetry(error, attempt, delay);
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
-};
+}
 
-const shuffle = (arr) => arr.sort(() => Math.random() - 0.5);
-
-const getNested = (obj, path, fallback = null) => {
-  const keys = path.split('.');
-  return keys.reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : fallback), obj);
-};
-
-module.exports = { memoize, pipe, delay, deepClone, retry, shuffle, getNested };
+export function createResilientFetch(defaultOptions = {}) {
+  return (url, init = {}) => {
+    return retryNetworkOp(
+      async () => {
+        const response = await fetch(url, init);
+        if (!response.ok && response.status >= 500) {
+          const err = new Error(`HTTP error ${response.status}`);
+          err.status = response.status;
+          throw err;
+        }
+        return response;
+      },
+      defaultOptions
+    );
+  };
+}
