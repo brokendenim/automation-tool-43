@@ -1,75 +1,68 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_CONFIG = {
-  app: { name: 'automation-tool-43', env: 'development', port: 3000 },
-  logging: { level: 'info', silent: false },
-  execution: { timeout: 5000, retries: 3, concurrency: 2 }
-};
+const DEFAULTS = Symbol('defaults');
+const OVERRIDES = Symbol('overrides');
 
-function createConfigLayer(base, overrides) {
-  const layer = Object.create(base);
-  for (const [key, val] of Object.entries(overrides)) {
-    if (val && typeof val === 'object' && !Array.isArray(val) && base[key]) {
-      layer[key] = createConfigLayer(base[key], val);
-    } else {
-      layer[key] = val;
-    }
+class ConfigCascade {
+  constructor(defaultConfig = {}) {
+    this[DEFAULTS] = Object.freeze({ ...defaultConfig });
+    this[OVERRIDES] = new Map();
   }
-  return layer;
-}
 
-function parseEnvOverrides(prefix = 'AUTO_') {
-  const envConfig = {};
-  for (const [key, val] of Object.entries(process.env)) {
-    if (!key.startsWith(prefix)) continue;
-    const pathKeys = key.slice(prefix.length).toLowerCase().split('_');
-    let current = envConfig;
-    pathKeys.forEach((k, idx) => {
-      if (idx === pathKeys.length - 1) {
-        let parsed = val;
-        if (val === 'true') parsed = true;
-        else if (val === 'false') parsed = false;
-        else if (!isNaN(Number(val))) parsed = Number(val);
-        current[k] = parsed;
-      } else {
-        current[k] = current[k] || {};
-        current = current[k];
+  set(key, value) {
+    this[OVERRIDES].set(key, value);
+    return this;
+  }
+
+  loadFromFile(filePath) {
+    try {
+      const absolutePath = path.resolve(filePath);
+      if (fs.existsSync(absolutePath)) {
+        const fileContent = fs.readFileSync(absolutePath, 'utf8');
+        const parsed = JSON.parse(fileContent);
+        Object.entries(parsed).forEach(([k, v]) => this.set(k, v));
+      }
+    } catch (err) {
+      // Silent fallback for unreadable configurations
+    }
+    return this;
+  }
+
+  loadFromEnv(prefix = 'AUTO_') {
+    Object.keys(process.env).forEach((envKey) => {
+      if (envKey.startsWith(prefix)) {
+        const configKey = envKey
+          .slice(prefix.length)
+          .toLowerCase()
+          .replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+        this.set(configKey, process.env[envKey]);
       }
     });
-  }
-  return envConfig;
-}
-
-function loadConfig(userPath = null, customDefaults = {}) {
-  const baseDefaults = createConfigLayer(DEFAULT_CONFIG, customDefaults);
-  let fileConfig = {};
-
-  if (userPath) {
-    const resolvedPath = path.resolve(process.cwd(), userPath);
-    if (fs.existsSync(resolvedPath)) {
-      fileConfig = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
-    }
+    return this;
   }
 
-  const envOverrides = parseEnvOverrides();
-  const withFile = createConfigLayer(baseDefaults, fileConfig);
-  const merged = createConfigLayer(withFile, envOverrides);
+  build() {
+    const handler = {
+      get: (target, prop) => {
+        if (typeof prop === 'symbol') return target[prop];
+        if (prop === 'toJSON') {
+          return () => ({ ...target[DEFAULTS], ...Object.fromEntries(target[OVERRIDES]) });
+        }
+        if (target[OVERRIDES].has(prop)) {
+          return target[OVERRIDES].get(prop);
+        }
+        return target[DEFAULTS][prop];
+      },
+      has: (target, prop) => target[OVERRIDES].has(prop) || prop in target[DEFAULTS]
+    };
 
-  return new Proxy(merged, {
-    get(target, prop) {
-      if (prop === 'get') {
-        return (dotPath, fallback) => {
-          const res = dotPath.split('.').reduce((acc, k) => (acc && k in acc ? acc[k] : undefined), target);
-          return res !== undefined ? res : fallback;
-        };
-      }
-      return Reflect.get(target, prop);
-    },
-    set() {
-      throw new Error('Config instance is immutable');
-    }
-  });
+    return new Proxy(this, handler);
+  }
 }
 
-module.exports = { loadConfig, DEFAULT_CONFIG };
+function createConfigLoader(defaults = {}) {
+  return new ConfigCascade(defaults);
+}
+
+module.exports = { createConfigLoader, ConfigCascade };
