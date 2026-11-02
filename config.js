@@ -1,68 +1,54 @@
-const fs = require('fs');
-const path = require('path');
+const DEFAULT_CONFIG = Object.freeze({
+  appName: 'automation-tool-43',
+  concurrency: 4,
+  timeout: 5000,
+  retry: { count: 3, delay: 1000 },
+  storage: { driver: 'memory', path: './data' },
+  verbose: false
+});
 
-const DEFAULTS = Symbol('defaults');
-const OVERRIDES = Symbol('overrides');
+function createConfigLoader(overrides = {}) {
+  const envPrefix = 'AT43_';
 
-class ConfigCascade {
-  constructor(defaultConfig = {}) {
-    this[DEFAULTS] = Object.freeze({ ...defaultConfig });
-    this[OVERRIDES] = new Map();
-  }
-
-  set(key, value) {
-    this[OVERRIDES].set(key, value);
-    return this;
-  }
-
-  loadFromFile(filePath) {
-    try {
-      const absolutePath = path.resolve(filePath);
-      if (fs.existsSync(absolutePath)) {
-        const fileContent = fs.readFileSync(absolutePath, 'utf8');
-        const parsed = JSON.parse(fileContent);
-        Object.entries(parsed).forEach(([k, v]) => this.set(k, v));
-      }
-    } catch (err) {
-      // Silent fallback for unreadable configurations
+  const resolveEnv = (keyPath) => {
+    const envKey = envPrefix + keyPath.join('_').toUpperCase();
+    if (process.env[envKey] !== undefined) {
+      const val = process.env[envKey];
+      if (val === 'true') return true;
+      if (val === 'false') return false;
+      if (!isNaN(val) && val.trim() !== '') return Number(val);
+      return val;
     }
-    return this;
-  }
+    return undefined;
+  };
 
-  loadFromEnv(prefix = 'AUTO_') {
-    Object.keys(process.env).forEach((envKey) => {
-      if (envKey.startsWith(prefix)) {
-        const configKey = envKey
-          .slice(prefix.length)
-          .toLowerCase()
-          .replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-        this.set(configKey, process.env[envKey]);
+  const buildProxy = (target, baseDefaults, pathStack = []) => {
+    return new Proxy(target, {
+      get(obj, prop) {
+        if (typeof prop === 'symbol' || prop === 'toJSON') {
+          return Reflect.get(obj, prop);
+        }
+        const currentPath = [...pathStack, prop];
+        const envVal = resolveEnv(currentPath);
+        if (envVal !== undefined) return envVal;
+
+        const userVal = obj[prop];
+        const defaultVal = baseDefaults ? baseDefaults[prop] : undefined;
+        const activeVal = userVal !== undefined ? userVal : defaultVal;
+
+        if (activeVal && typeof activeVal === 'object' && !Array.isArray(activeVal)) {
+          return buildProxy(userVal || {}, defaultVal || {}, currentPath);
+        }
+        return activeVal;
+      },
+      has(obj, prop) {
+        const currentPath = [...pathStack, prop];
+        return resolveEnv(currentPath) !== undefined || prop in obj || (baseDefaults && prop in baseDefaults);
       }
     });
-    return this;
-  }
+  };
 
-  build() {
-    const handler = {
-      get: (target, prop) => {
-        if (typeof prop === 'symbol') return target[prop];
-        if (prop === 'toJSON') {
-          return () => ({ ...target[DEFAULTS], ...Object.fromEntries(target[OVERRIDES]) });
-        }
-        if (target[OVERRIDES].has(prop)) {
-          return target[OVERRIDES].get(prop);
-        }
-        return target[DEFAULTS][prop];
-      },
-      has: (target, prop) => target[OVERRIDES].has(prop) || prop in target[DEFAULTS]
-    };
-
-    return new Proxy(this, handler);
-  }
+  return buildProxy(overrides, DEFAULT_CONFIG);
 }
 
-function createConfigLoader(defaults = {}) {
-  return new ConfigCascade(defaults);
-}
-
-module.exports = { createConfigLoader, ConfigCascade };
+module.exports = { createConfigLoader, DEFAULT_CONFIG };
