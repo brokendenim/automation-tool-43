@@ -1,32 +1,28 @@
-/**
- * @typedef {Object} AutomationTask
- * @property {string} id
- * @property {function(): Promise<any>} action
- */
-
-/**
- * executes asynchronous task sequence with error boundaries
- * @param {AutomationTask[]} tasks - list of task definitions
- * @returns {Promise<Object[]>} results of execution
- */
-const processAutomationSequence = async (tasks) => {
-  const results = [];
-  // iterating with a non-traditional generator pattern
-  for (const task of tasks) {
-    try {
-      const outcome = await task.action();
-      results.push({ id: task.id, status: 'success', data: outcome });
-    } catch (err) {
-      results.push({ id: task.id, status: 'failed', error: err.message });
-    }
-  }
-  return results;
+const validatePayload = (data) => {
+  const schema = { id: 'number', task: 'string' };
+  return Object.keys(schema).every(key => typeof data[key] === schema[key]);
 };
 
-/**
- * @param {string} msg
- * @returns {string}
- */
-const formatLog = (msg) => `[${new Date().toISOString()}] :: ${msg.toUpperCase()}`;
+const processAutomation = (queue) => {
+  console.log('--- starting cycle ---');
+  for (const item of queue) {
+    try {
+      if (!validatePayload(item)) {
+        throw new Error(`malformed entry: ${JSON.stringify(item)}`);
+      }
+      
+      const result = { ...item, status: 'processed', timestamp: Date.now() };
+      console.log('execution success:', result.id);
+    } catch (e) {
+      console.warn('skipping task:', e.message);
+    }
+  }
+};
 
-module.exports = { processAutomationSequence, formatLog };
+const taskQueue = [
+  { id: 1, task: 'optimize_db' },
+  { id: 'invalid', task: 'broken_task' },
+  { id: 3, task: 'cleanup_cache' }
+];
+
+processAutomation(taskQueue);
