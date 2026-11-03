@@ -1,63 +1,68 @@
-class ResilientLogger {
-  #seenSet = new WeakSet();
-  #maxDepth = 4;
+const SYMBOLS = {
+  info: '💡',
+  warn: '⚠️',
+  error: '🔥',
+  debug: '🛠️'
+};
 
-  constructor(options = {}) {
-    this.fallbackStream = options.fallback || console.log;
+class StreamLogger {
+  #buffer = [];
+  #maxSize;
+
+  constructor(maxSize = 100) {
+    this.#maxSize = maxSize;
     return new Proxy(this, {
-      get: (target, prop) => {
-        if (prop in target) return target[prop];
-        return (...args) => target.log('INFO', `[${String(prop)}]`, ...args);
+      get(target, prop) {
+        if (prop in SYMBOLS) {
+          return (...args) => target.#log(prop, ...args);
+        }
+        return Reflect.get(target, prop);
       }
     });
   }
 
-  #serialize(arg, depth = 0) {
-    if (depth > this.#maxDepth) return '[Truncated Depth]';
-    if (arg === null || arg === undefined) return String(arg);
-    if (typeof arg === 'bigint') return `${arg.toString()}n`;
-    if (typeof arg === 'symbol') return arg.toString();
-    if (typeof arg === 'function') return `[Function: ${arg.name || 'anonymous'}]`;
-    if (arg instanceof Error) {
-      return {
-        name: arg.name || 'UnknownError',
-        message: arg.message || 'No error message',
-        stack: (arg.stack || '').split('\
-').slice(0, 3).join('\
-')
-      };
+  #log(level, msg, metadata = {}) {
+    const payload = {
+      timestamp: new Date().toISOString(),
+      level,
+      icon: SYMBOLS[level],
+      msg,
+      ...metadata
+    };
+
+    this.#buffer.push(payload);
+    if (this.#buffer.length > this.#maxSize) {
+      this.#buffer.shift();
     }
-    if (typeof arg === 'object') {
-      if (this.#seenSet.has(arg)) return '[Circular Reference]';
-      this.#seenSet.add(arg);
-      try {
-        const copy = Array.isArray(arg) ? [] : {};
-        for (const key of Reflect.ownKeys(arg)) {
-          copy[String(key)] = this.#serialize(arg[key], depth + 1);
-        }
-        return copy;
-      } catch (err) {
-        return `[Unserializable: ${err.message}]`;
-      }
-    }
-    return arg;
+
+    const consoleMethod = console[level] ? level : 'log';
+    console[consoleMethod](`[${payload.timestamp}] ${payload.icon} ${payload.level.toUpperCase()}: ${msg}`);
+    return payload;
   }
 
-  log(level, ...args) {
-    const timestamp = new Date().toISOString();
-    try {
-      const processed = args.map(a => this.#serialize(a));
-      const payload = JSON.stringify({ timestamp, level, payload: processed });
-      this.fallbackStream(payload);
-    } catch (fatalError) {
-      try {
-        console.error('Logger panic mode:', fatalError.message);
-        this.fallbackStream(`[PANIC] ${timestamp} - Degraded logging triggered`);
-      } catch {
-        // Fallback for extreme memory pressure or stdout failures
-      }
+  compact() {
+    return this.#buffer.reduce((acc, entry) => {
+      acc[entry.level] = (acc[entry.level] || 0) + 1;
+      return acc;
+    }, { total: this.#buffer.length });
+  }
+
+  *flushStream() {
+    while (this.#buffer.length > 0) {
+      yield this.#buffer.shift();
     }
+  }
+
+  purge(filterFn = null) {
+    if (!filterFn) {
+      const count = this.#buffer.length;
+      this.#buffer = [];
+      return count;
+    }
+    const initial = this.#buffer.length;
+    this.#buffer = this.#buffer.filter(item => !filterFn(item));
+    return initial - this.#buffer.length;
   }
 }
 
-module.exports = new ResilientLogger();
+module.exports = StreamLogger;
