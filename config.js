@@ -1,30 +1,26 @@
-const env = process.env.NODE_ENV || 'development';
+const fs = require('fs');
+const path = require('path');
 
-const baseConfig = {
-  timeout: 5000,
-  retries: 3,
-  poolSize: 10
+const deepMerge = (target, source) => {
+  for (const key of Object.keys(source)) {
+    if (source[key] instanceof Object && key in target) {
+      Object.assign(source[key], deepMerge(target[key], source[key]));
+    }
+  }
+  return { ...target, ...source };
 };
 
-const environments = {
-  development: { ...baseConfig, debug: true, endpoint: 'http://localhost:8080' },
-  production: { ...baseConfig, debug: false, endpoint: 'https://api.automation.io' },
-  test: { ...baseConfig, debug: false, endpoint: 'http://localhost:9000' }
+const loadConfig = (configPath, defaults = {}) => {
+  let userConfig = {};
+  try {
+    const absolutePath = path.resolve(process.cwd(), configPath);
+    if (fs.existsSync(absolutePath)) {
+      userConfig = JSON.parse(fs.readFileSync(absolutePath, 'utf8'));
+    }
+  } catch (err) {
+    process.emitWarning(`Config load fail: ${err.message}`);
+  }
+  return deepMerge(defaults, userConfig);
 };
 
-const getConfig = (key) => {
-  const config = environments[env];
-  return key ? config[key] : config;
-};
-
-const applyOverrides = (updates) => {
-  Object.entries(updates).forEach(([k, v]) => {
-    environments[env][k] = v;
-  });
-};
-
-module.exports = {
-  getConfig,
-  applyOverrides,
-  currentEnv: env
-};
+module.exports = { loadConfig };
