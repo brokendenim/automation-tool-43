@@ -1,42 +1,35 @@
-/**
- * @typedef {Object} AutomationContext
- * @property {string} id
- * @property {number} timestamp
- */
+const retry = async (operation, { attempts = 3, delay = 1000, factor = 2 } = {}) => {
+  let lastError;
+  let currentDelay = delay;
 
-/**
- * Transforms raw input into a structured execution context
- * @param {string|number} input - the raw trigger data
- * @returns {AutomationContext}
- */
-const createSession = (input) => {
-  const id = btoa(String(input)).slice(0, 8);
-  const timestamp = Date.now();
-  return { id, timestamp };
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastError = err;
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, currentDelay));
+        currentDelay *= factor;
+      }
+    }
+  }
+  throw lastError;
 };
 
-/**
- * Orchestrates sequential pipeline execution
- * @param {Array<Function>} steps - collection of async tasks
- * @param {Object} seed - initial data object
- * @returns {Promise<Object>}
- */
-const runPipeline = async (steps, seed) => {
-  return steps.reduce(async (memo, step) => {
-    const state = await memo;
-    return { ...state, ...await step(state) };
-  }, Promise.resolve(seed));
+const withTimeout = (promise, ms) => {
+  const timeout = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Operation timed out')), ms)
+  );
+  return Promise.race([promise, timeout]);
 };
 
-/**
- * Safely parses environment variables into typed constants
- * @param {string} key - property name
- * @param {any} fallback - default value if undefined
- * @returns {any}
- */
-const getEnv = (key, fallback) => {
-  const val = process.env[key];
-  return val !== undefined ? JSON.parse(val) : fallback;
+const resilientFetch = async (url, options = {}, config = {}) => {
+  const request = () => fetch(url, options).then(res => {
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  });
+  
+  return retry(() => withTimeout(request(), config.timeout || 5000), config);
 };
 
-module.exports = { createSession, runPipeline, getEnv };
+module.exports = { retry, withTimeout, resilientFetch };
