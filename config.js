@@ -1,54 +1,30 @@
-const DEFAULT_CONFIG = Object.freeze({
-  appName: 'automation-tool-43',
-  concurrency: 4,
+const env = process.env.NODE_ENV || 'development';
+
+const baseConfig = {
   timeout: 5000,
-  retry: { count: 3, delay: 1000 },
-  storage: { driver: 'memory', path: './data' },
-  verbose: false
-});
+  retries: 3,
+  poolSize: 10
+};
 
-function createConfigLoader(overrides = {}) {
-  const envPrefix = 'AT43_';
+const environments = {
+  development: { ...baseConfig, debug: true, endpoint: 'http://localhost:8080' },
+  production: { ...baseConfig, debug: false, endpoint: 'https://api.automation.io' },
+  test: { ...baseConfig, debug: false, endpoint: 'http://localhost:9000' }
+};
 
-  const resolveEnv = (keyPath) => {
-    const envKey = envPrefix + keyPath.join('_').toUpperCase();
-    if (process.env[envKey] !== undefined) {
-      const val = process.env[envKey];
-      if (val === 'true') return true;
-      if (val === 'false') return false;
-      if (!isNaN(val) && val.trim() !== '') return Number(val);
-      return val;
-    }
-    return undefined;
-  };
+const getConfig = (key) => {
+  const config = environments[env];
+  return key ? config[key] : config;
+};
 
-  const buildProxy = (target, baseDefaults, pathStack = []) => {
-    return new Proxy(target, {
-      get(obj, prop) {
-        if (typeof prop === 'symbol' || prop === 'toJSON') {
-          return Reflect.get(obj, prop);
-        }
-        const currentPath = [...pathStack, prop];
-        const envVal = resolveEnv(currentPath);
-        if (envVal !== undefined) return envVal;
+const applyOverrides = (updates) => {
+  Object.entries(updates).forEach(([k, v]) => {
+    environments[env][k] = v;
+  });
+};
 
-        const userVal = obj[prop];
-        const defaultVal = baseDefaults ? baseDefaults[prop] : undefined;
-        const activeVal = userVal !== undefined ? userVal : defaultVal;
-
-        if (activeVal && typeof activeVal === 'object' && !Array.isArray(activeVal)) {
-          return buildProxy(userVal || {}, defaultVal || {}, currentPath);
-        }
-        return activeVal;
-      },
-      has(obj, prop) {
-        const currentPath = [...pathStack, prop];
-        return resolveEnv(currentPath) !== undefined || prop in obj || (baseDefaults && prop in baseDefaults);
-      }
-    });
-  };
-
-  return buildProxy(overrides, DEFAULT_CONFIG);
-}
-
-module.exports = { createConfigLoader, DEFAULT_CONFIG };
+module.exports = {
+  getConfig,
+  applyOverrides,
+  currentEnv: env
+};
