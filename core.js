@@ -1,28 +1,31 @@
-const validatePayload = (data) => {
-  const schema = { id: 'number', task: 'string' };
-  return Object.keys(schema).every(key => typeof data[key] === schema[key]);
-};
+/**
+ * @typedef {Object} AutomationTask
+ * @property {string} id - unique task identifier
+ * @property {function(): Promise<any>} execute - primary task routine
+ */
 
-const processAutomation = (queue) => {
-  console.log('--- starting cycle ---');
-  for (const item of queue) {
+/**
+ * Orchestrates batch task execution with functional wrappers
+ * @param {AutomationTask[]} tasks - collection of tasks to run
+ * @returns {Promise<Object[]>} results of the orchestration
+ */
+async function orchestrate(tasks) {
+  const results = await Promise.all(tasks.map(async (task) => {
     try {
-      if (!validatePayload(item)) {
-        throw new Error(`malformed entry: ${JSON.stringify(item)}`);
-      }
-      
-      const result = { ...item, status: 'processed', timestamp: Date.now() };
-      console.log('execution success:', result.id);
-    } catch (e) {
-      console.warn('skipping task:', e.message);
+      const output = await task.execute();
+      return { id: task.id, status: 'fulfilled', output };
+    } catch (error) {
+      return { id: task.id, status: 'rejected', reason: error.message };
     }
-  }
-};
+  }));
+  return results;
+}
 
-const taskQueue = [
-  { id: 1, task: 'optimize_db' },
-  { id: 'invalid', task: 'broken_task' },
-  { id: 3, task: 'cleanup_cache' }
-];
+/**
+ * High-order pipe for transformation pipelines
+ * @param  {...Function} fns - sequence of functions
+ * @returns {Function} composed operation
+ */
+const pipe = (...fns) => (initial) => fns.reduce((v, f) => f(v), initial);
 
-processAutomation(taskQueue);
+export { orchestrate, pipe };
