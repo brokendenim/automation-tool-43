@@ -1,37 +1,55 @@
-/**
- * recursive data sanitization for automation-tool-43
- */
-const sanitize = (data, mask = ['password', 'token', 'secret']) => {
-  if (data === null || typeof data !== 'object') return data;
-
-  return Object.entries(data).reduce((acc, [key, value]) => {
-    if (mask.includes(key.toLowerCase())) {
-      acc[key] = '***REDACTED***';
-    } else if (Array.isArray(value)) {
-      acc[key] = value.map(v => sanitize(v, mask));
-    } else if (typeof value === 'object') {
-      acc[key] = sanitize(value, mask);
-    } else {
-      acc[key] = value;
-    }
-    return acc;
-  }, Array.isArray(data) ? [] : {});
+const EDGE_CASES = {
+  UNSAFE_NUMBERS: [NaN, Infinity, -Infinity],
+  EMPTY_FALLBACK: Object.freeze({ status: 'degraded', payload: null })
 };
 
 /**
- * pipeline transformation wrapper for stream processing
+ * Creates a self-healing boundary around functions to intercept edge-case failures.
  */
-const pipe = (...fns) => (val) => fns.reduce((acc, fn) => fn(acc), val);
+function createSafeBoundary(fn, customFallback = null) {
+  if (typeof fn !== 'function') {
+    const staticVal = fn ?? customFallback ?? EDGE_CASES.EMPTY_FALLBACK;
+    return () => staticVal;
+  }
 
-/**
- * deep clone using structuredClone or fallback strategy
- */
-const clone = (data) => {
-  try {
-    return structuredClone(data);
-  } catch (e) {
-    return JSON.parse(JSON.stringify(data));
+  return new Proxy(fn, {
+    apply(target, thisArg, argsList) {
+      const sanitizedArgs = argsList.map(arg => {
+        if (EDGE_CASES.UNSAFE_NUMBERS.includes(arg)) return 0;
+        if (typeof arg === 'symbol') return arg.toString();
+        return arg;
+      });
+
+      try {
+        const result = Reflect.apply(target, thisArg, sanitizedArgs);
+        
+        if (result instanceof Promise) {
+          return result.catch(err => {
+            return ErrorTrapResolver.resolve(err, customFallback);
+          });
+        }
+        return result ?? customFallback;
+      } catch (err) {
+        return ErrorTrapResolver.resolve(err, customFallback);
+      }
+    }
+  });
+}
+
+const ErrorTrapResolver = {
+  resolve(err, fallback) {
+    const errorMap = new Map([
+      [RangeError, () => fallback ?? []],
+      [TypeError, () => fallback ?? {}],
+      [URIError, () => fallback ?? '']
+    ]);
+
+    for (const [ErrorType, handler] of errorMap) {
+      if (err instanceof ErrorType) return handler();
+    }
+
+    return fallback ?? EDGE_CASES.EMPTY_FALLBACK;
   }
 };
 
-module.exports = { sanitize, pipe, clone };
+module.exports = { createSafeBoundary, ErrorTrapResolver };
