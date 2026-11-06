@@ -1,35 +1,34 @@
-const retry = async (operation, { attempts = 3, delay = 1000, factor = 2 } = {}) => {
-  let lastError;
-  let currentDelay = delay;
+const memoize = (fn, ttl = 30000) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    const entry = cache.get(key);
+    if (entry && Date.now() - entry.time < ttl) return entry.val;
+    const result = fn(...args);
+    cache.set(key, { val: result, time: Date.now() });
+    return result;
+  };
+};
 
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await operation();
-    } catch (err) {
-      lastError = err;
-      if (i < attempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, currentDelay));
-        currentDelay *= factor;
-      }
+const batchProcess = (items, processor, chunkSize = 10) => {
+  const results = [];
+  let index = 0;
+  const run = () => {
+    const end = Math.min(index + chunkSize, items.length);
+    for (; index < end; index++) {
+      results.push(processor(items[index]));
     }
-  }
-  throw lastError;
+    return index < items.length ? new Promise(resolve => setTimeout(() => resolve(run()), 0)) : results;
+  };
+  return run();
 };
 
-const withTimeout = (promise, ms) => {
-  const timeout = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error('Operation timed out')), ms)
-  );
-  return Promise.race([promise, timeout]);
+const objectPool = (factory, size = 50) => {
+  const pool = Array.from({ length: size }, factory);
+  return {
+    acquire: () => pool.pop() || factory(),
+    release: (obj) => pool.length < size && pool.push(obj)
+  };
 };
 
-const resilientFetch = async (url, options = {}, config = {}) => {
-  const request = () => fetch(url, options).then(res => {
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  });
-  
-  return retry(() => withTimeout(request(), config.timeout || 5000), config);
-};
-
-module.exports = { retry, withTimeout, resilientFetch };
+export { memoize, batchProcess, objectPool };
