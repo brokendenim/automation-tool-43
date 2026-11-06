@@ -1,56 +1,37 @@
-function* fibonacciJitterBackoff(baseMs = 100, maxMs = 10000) {
-  let prev = 0;
-  let curr = 1;
-  while (true) {
-    const next = prev + curr;
-    prev = curr;
-    curr = next;
-    const rawDelay = Math.min(curr * baseMs, maxMs);
-    const jitter = rawDelay * (Math.random() * 0.5 - 0.25);
-    yield Math.max(0, Math.floor(rawDelay + jitter));
-  }
-}
+/**
+ * recursive data sanitization for automation-tool-43
+ */
+const sanitize = (data, mask = ['password', 'token', 'secret']) => {
+  if (data === null || typeof data !== 'object') return data;
 
-export async function retryNetworkOp(task, options = {}) {
-  const {
-    maxAttempts = 5,
-    baseMs = 200,
-    maxMs = 8000,
-    shouldRetry = (err) => err?.status >= 500 || err?.code === 'ECONNRESET' || !err?.status,
-    onRetry = () => {}
-  } = options;
-
-  const backoffStream = fibonacciJitterBackoff(baseMs, maxMs);
-  let attempt = 0;
-
-  while (true) {
-    attempt++;
-    try {
-      return await task({ attempt });
-    } catch (error) {
-      if (attempt >= maxAttempts || !shouldRetry(error)) {
-        throw error;
-      }
-      const delay = backoffStream.next().value;
-      onRetry(error, attempt, delay);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+  return Object.entries(data).reduce((acc, [key, value]) => {
+    if (mask.includes(key.toLowerCase())) {
+      acc[key] = '***REDACTED***';
+    } else if (Array.isArray(value)) {
+      acc[key] = value.map(v => sanitize(v, mask));
+    } else if (typeof value === 'object') {
+      acc[key] = sanitize(value, mask);
+    } else {
+      acc[key] = value;
     }
-  }
-}
+    return acc;
+  }, Array.isArray(data) ? [] : {});
+};
 
-export function createResilientFetch(defaultOptions = {}) {
-  return (url, init = {}) => {
-    return retryNetworkOp(
-      async () => {
-        const response = await fetch(url, init);
-        if (!response.ok && response.status >= 500) {
-          const err = new Error(`HTTP error ${response.status}`);
-          err.status = response.status;
-          throw err;
-        }
-        return response;
-      },
-      defaultOptions
-    );
-  };
-}
+/**
+ * pipeline transformation wrapper for stream processing
+ */
+const pipe = (...fns) => (val) => fns.reduce((acc, fn) => fn(acc), val);
+
+/**
+ * deep clone using structuredClone or fallback strategy
+ */
+const clone = (data) => {
+  try {
+    return structuredClone(data);
+  } catch (e) {
+    return JSON.parse(JSON.stringify(data));
+  }
+};
+
+module.exports = { sanitize, pipe, clone };
