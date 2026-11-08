@@ -1,28 +1,27 @@
-const fs = require('fs').promises;
-const path = require('path');
+const memoize = (fn, cache = new Map()) => (...args) => {
+  const key = JSON.stringify(args);
+  return cache.has(key) ? cache.get(key) : cache.set(key, fn(...args)).get(key);
+};
 
-const handler = {
-  queue: new Set(),
-  async process(files) {
-    this.queue = new Set(files.filter(f => f.endsWith('.tmp')));
-    const results = await Promise.allSettled([...this.queue].map(this.sanitize));
-    return results.reduce((acc, res) => {
-      if (res.status === 'fulfilled') acc.push(res.value);
-      return acc;
-    }, []);
-  },
-  async sanitize(file) {
-    const data = await fs.readFile(file, 'utf8');
-    const scrubbed = data.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
-    const destination = file.replace('.tmp', '.clean');
-    await fs.writeFile(destination, scrubbed);
-    await fs.unlink(file);
-    return destination;
-  },
-  flush() {
-    this.queue.clear();
-    return true;
+const pipe = (...fns) => (val) => fns.reduce((v, f) => f(v), val);
+
+const retry = async (fn, attempts = 3, delay = 1000) => {
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); } 
+    catch (e) { if (i === attempts - 1) throw e; await new Promise(r => setTimeout(r, delay)); }
   }
 };
 
-module.exports = handler;
+const deepFreeze = (obj) => {
+  Object.getOwnPropertyNames(obj).forEach(prop => {
+    if (obj[prop] !== null && (typeof obj[prop] === 'object')) deepFreeze(obj[prop]);
+  });
+  return Object.freeze(obj);
+};
+
+const tap = (fn) => (val) => {
+  fn(val);
+  return val;
+};
+
+module.exports = { memoize, pipe, retry, deepFreeze, tap };
