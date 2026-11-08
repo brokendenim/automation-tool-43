@@ -1,55 +1,38 @@
-const EDGE_CASES = {
-  UNSAFE_NUMBERS: [NaN, Infinity, -Infinity],
-  EMPTY_FALLBACK: Object.freeze({ status: 'degraded', payload: null })
+const transform = (input, schema) => {
+  const result = {};
+  for (const [key, path] of Object.entries(schema)) {
+    const value = String(path).split('.').reduce((acc, part) => acc && acc[part], input);
+    result[key] = value ?? null;
+  }
+  return result;
 };
 
-/**
- * Creates a self-healing boundary around functions to intercept edge-case failures.
- */
-function createSafeBoundary(fn, customFallback = null) {
-  if (typeof fn !== 'function') {
-    const staticVal = fn ?? customFallback ?? EDGE_CASES.EMPTY_FALLBACK;
-    return () => staticVal;
-  }
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
+};
 
-  return new Proxy(fn, {
-    apply(target, thisArg, argsList) {
-      const sanitizedArgs = argsList.map(arg => {
-        if (EDGE_CASES.UNSAFE_NUMBERS.includes(arg)) return 0;
-        if (typeof arg === 'symbol') return arg.toString();
-        return arg;
-      });
+const pipeline = (...fns) => (initialValue) => fns.reduce((val, fn) => fn(val), initialValue);
 
-      try {
-        const result = Reflect.apply(target, thisArg, sanitizedArgs);
-        
-        if (result instanceof Promise) {
-          return result.catch(err => {
-            return ErrorTrapResolver.resolve(err, customFallback);
-          });
-        }
-        return result ?? customFallback;
-      } catch (err) {
-        return ErrorTrapResolver.resolve(err, customFallback);
-      }
-    }
+const deepFreeze = (obj) => {
+  Object.keys(obj).forEach((prop) => {
+    if (typeof obj[prop] === 'object' && obj[prop] !== null) deepFreeze(obj[prop]);
   });
-}
-
-const ErrorTrapResolver = {
-  resolve(err, fallback) {
-    const errorMap = new Map([
-      [RangeError, () => fallback ?? []],
-      [TypeError, () => fallback ?? {}],
-      [URIError, () => fallback ?? '']
-    ]);
-
-    for (const [ErrorType, handler] of errorMap) {
-      if (err instanceof ErrorType) return handler();
-    }
-
-    return fallback ?? EDGE_CASES.EMPTY_FALLBACK;
-  }
+  return Object.freeze(obj);
 };
 
-module.exports = { createSafeBoundary, ErrorTrapResolver };
+const debounced = (fn, delay) => {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => fn(...args), delay);
+  };
+};
+
+module.exports = { transform, memoize, pipeline, deepFreeze, debounced };
