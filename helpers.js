@@ -1,34 +1,42 @@
-const memoize = (fn, ttl = 30000) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    const entry = cache.get(key);
-    if (entry && Date.now() - entry.time < ttl) return entry.val;
-    const result = fn(...args);
-    cache.set(key, { val: result, time: Date.now() });
-    return result;
-  };
-};
+/**
+ * @typedef {Object} AutomationResult
+ * @property {boolean} success - Operation status
+ * @property {string|number} payload - Result data
+ */
 
-const batchProcess = (items, processor, chunkSize = 10) => {
-  const results = [];
-  let index = 0;
-  const run = () => {
-    const end = Math.min(index + chunkSize, items.length);
-    for (; index < end; index++) {
-      results.push(processor(items[index]));
-    }
-    return index < items.length ? new Promise(resolve => setTimeout(() => resolve(run()), 0)) : results;
-  };
-  return run();
-};
-
-const objectPool = (factory, size = 50) => {
-  const pool = Array.from({ length: size }, factory);
+/**
+ * transforms raw input into sanitized output stream
+ * @param {string|Array} input - data to process
+ * @returns {AutomationResult} processing status object
+ */
+const processTask = (input) => {
+  const data = Array.isArray(input) ? input.join('') : String(input);
   return {
-    acquire: () => pool.pop() || factory(),
-    release: (obj) => pool.length < size && pool.push(obj)
+    success: data.length > 0,
+    payload: btoa(data)
   };
 };
 
-export { memoize, batchProcess, objectPool };
+/**
+ * generates pseudorandom identifiers for operations
+ * @param {number} len - length of generated id
+ * @returns {string} alphanumeric token
+ */
+const generateHash = (len = 8) => {
+  return Array.from({ length: len }, () => 
+    Math.floor(Math.random() * 36).toString(36)
+  ).join('');
+};
+
+/**
+ * executes throttled pipeline processing
+ * @param {Function} fn - logic to run
+ * @param {number} delay - ms wait time
+ * @returns {Promise<void>} resolve after delay
+ */
+const throttle = async (fn, delay = 100) => {
+  await new Promise((r) => setTimeout(r, delay));
+  return fn();
+};
+
+export { processTask, generateHash, throttle };
