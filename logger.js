@@ -1,25 +1,28 @@
 const fs = require('fs');
 const path = require('path');
 
-const LOG_FILE = path.join(__dirname, 'automation.log');
+const LOG_DIR = path.join(__dirname, 'logs');
+const MAX_SIZE = 1024 * 1024 * 5;
 
-const createLogger = (context) => {
-  const timestamp = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
 
-  const stream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
-
-  const log = (level, message) => {
-    const entry = `[${timestamp()}] [${level.toUpperCase()}] [${context}] ${message}\n`;
-    process.stdout.write(entry);
-    stream.write(entry);
-  };
-
-  return {
-    info: (msg) => log('info', msg),
-    warn: (msg) => log('warn', msg),
-    error: (msg) => log('error', msg),
-    flush: () => stream.end()
-  };
+const rotate = (filePath) => {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  fs.renameSync(filePath, `${filePath}.${timestamp}.bak`);
 };
 
-module.exports = { createLogger };
+const logger = (message) => {
+  const logPath = path.join(LOG_DIR, 'app.log');
+  const entry = `[${new Date().toISOString()}] ${message}\n`;
+  
+  try {
+    if (fs.existsSync(logPath) && fs.statSync(logPath).size > MAX_SIZE) {
+      rotate(logPath);
+    }
+    fs.appendFileSync(logPath, entry);
+  } catch (err) {
+    process.stderr.write(`Logger failure: ${err.message}\n`);
+  }
+};
+
+module.exports = logger;
