@@ -1,27 +1,70 @@
-const memoize = (fn, cache = new Map()) => (...args) => {
-  const key = JSON.stringify(args);
-  return cache.has(key) ? cache.get(key) : cache.set(key, fn(...args)).get(key);
-};
+import { EventEmitter } from 'events';
 
-const pipe = (...fns) => (val) => fns.reduce((v, f) => f(v), val);
+const ACTION_MAP = new Map();
+const HYDRATE_KEY = Symbol('hydrate_key');
 
-const retry = async (fn, attempts = 3, delay = 1000) => {
-  for (let i = 0; i < attempts; i++) {
-    try { return await fn(); } 
-    catch (e) { if (i === attempts - 1) throw e; await new Promise(r => setTimeout(r, delay)); }
-  }
-};
-
-const deepFreeze = (obj) => {
-  Object.getOwnPropertyNames(obj).forEach(prop => {
-    if (obj[prop] !== null && (typeof obj[prop] === 'object')) deepFreeze(obj[prop]);
+export class TaskPipeline extends EventEmitter {
+  #store = new Map();
+  #cleanupRegistry = new FinalizationRegistry((id) => {
+    this.emit('gc', { id, timestamp: Date.now() });
   });
-  return Object.freeze(obj);
-};
 
-const tap = (fn) => (val) => {
-  fn(val);
-  return val;
-};
+  constructor(initialTasks = []) {
+    super();
+    this[HYDRATE_KEY](initialTasks);
+  }
 
-module.exports = { memoize, pipe, retry, deepFreeze, tap };
+  [HYDRATE_KEY](tasks) {
+    tasks.forEach((task, idx) => {
+      const id = `task_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`;
+      const payload = Object.freeze({ ...task, executed: false });
+      this.#store.set(id, payload);
+      this.#cleanupRegistry.register(payload, id);
+    });
+  }
+
+  get handlerProxy() {
+    return new Proxy(this.#store, {
+      get: (target, prop) => {
+        if (prop === 'flush') {
+          return () => {
+            const executed = [];
+            for (const [id, task] of target.entries()) {
+              executed.push({ id, status: 'purged', name: task.name });
+            }
+            target.clear();
+            return executed;
+          };
+        }
+        if (typeof prop === 'string' && target.has(prop)) {
+          const item = target.get(prop);
+          return (context = {}) => ({ ...item, executed: true, ctx: context });
+        }
+        return Reflect.get(target, prop);
+      }
+    });
+  }
+
+  dispatch(actionName, payload) {
+    const handlerKey = String(actionName).toLowerCase().trim();
+    const fn = ACTION_MAP.get(handlerKey) || ((data) => ({ status: 'unhandled', data }));
+    const meta = { time: Date.now(), key: handlerKey };
+    return fn(payload, meta);
+  }
+
+  static registerHandler(name, fn) {
+    if (typeof fn !== 'function') throw new TypeError('Handler must be callable');
+    ACTION_MAP.set(String(name).toLowerCase().trim(), fn);
+    return true;
+  }
+}
+
+TaskPipeline.registerHandler('transform', (data, meta) => {
+  const result = Object.entries(data).reduce((acc, [k, v]) => {
+    acc[`opt_${k}`] = typeof v === 'string' ? v.trim().toUpperCase() : v;
+    return acc;
+  }, {});
+  return { status: 'processed', meta, result };
+});
+
+TaskPipeline.registerHandler('ping', (_, meta) => ({ status: 'pong', meta }));
