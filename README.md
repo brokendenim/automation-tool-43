@@ -1,53 +1,24 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 # automation-tool-43
 
-Automation-tool-43 is a lightweight, high-performance Node.js utility designed to streamline repetitive task execution through customizable workflow configurations. It enables developers to orchestrate complex sequences of shell commands and file operations with minimal boilerplate.
+automation-tool-43 is a lightweight JavaScript-based engine built to streamline repetitive file operations and system tasks. It seamlessly monitors specified directory events, schedules cron jobs, and triggers custom workflow scripts with minimal resource overhead.
 
 ## Features
 
-*   **Task Chaining:** Execute multiple dependent scripts in a predefined sequence with automatic exit-on-failure handling.
-*   **Dynamic Variable Injection:** Pass environment-specific variables directly into your automation pipelines via JSON configuration.
-*   **Zero-Dependency Core:** Built using native Node.js modules to ensure a tiny footprint and maximum security.
-*   **Watch Mode:** Automatically trigger predefined routines whenever local file changes are detected.
+* **Event-Driven File Watching:** Monitors target directories for file creation, modification, or deletion using native OS events.
+* **Flexible Task Pipelines:** Chain Node.js functions and shell commands with built-in retry logic and configurable timeouts.
+* **Cron-Style Scheduling:** Define recurring background jobs using standard cron syntax directly inside your configuration.
+* **Webhook Alerting:** Send real-time execution logs and error reports directly to Discord, Slack, or custom HTTP endpoints.
 
 ## Installation
 
-Ensure you have [Node.js](https://nodejs.org/) (v16.x or higher) installed. Install the tool globally via npm:
+Install globally via npm:
 
 ```bash
 npm install -g automation-tool-43
 ```
 
-Alternatively, add it to your project as a development dependency:
+Or clone the repository for local development:
 
 ```bash
-npm install --save-dev automation-tool-43
-```
-
-## Usage
-
-Create an `automation.config.json` file in your root directory:
-
-```json
-{
-  "tasks": {
-    "build": ["npm run clean", "npm run compile"],
-    "deploy": ["npm run test", "node ./scripts/upload.js"]
-  }
-}
-```
-
-Run a specific task from your terminal:
-
-```bash
-# Run the build task
-automation-tool-43 run build
-
-# Run with watch mode enabled
-automation-tool-43 watch deploy
-```
-
-## License
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
