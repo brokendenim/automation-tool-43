@@ -1,36 +1,58 @@
-/**
- * A polymorphic data hydrator using a recursive proxy trap
- * to handle deep object transformations in automation-tool-43.
- */
-const hydrate = (data, schema = {}) => {
-  return new Proxy(data, {
-    get(target, prop) {
-      const value = target[prop];
-      if (schema[prop] === 'date' && typeof value === 'number') {
-        return new Date(value);
-      }
-      if (typeof value === 'object' && value !== null) {
-        return hydrate(value, schema[prop] || {});
-      }
-      return value ?? schema[prop]?.default ?? null;
-    },
-    set(target, prop, value) {
-      target[prop] = value;
-      return true;
-    },
-    ownKeys(target) {
-      return Object.keys(target);
-    }
-  });
-};
+class TaskDispatcher {
+  constructor(capacity = 1024) {
+    this.capacity = capacity;
+    this.ring = new Array(capacity);
+    this.head = 0;
+    this.tail = 0;
+    this.scheduled = false;
+    this.metrics = { executed: 0, dropped: 0 };
+  }
 
-/**
- * Data pipeline orchestrator using generator-based batching
- */
-function* batchProcessor(items, size = 10) {
-  for (let i = 0; i < items.length; i += size) {
-    yield items.slice(i, i + size);
+  enqueue(fn, context = null) {
+    const nextTail = (this.tail + 1) % this.capacity;
+    if (nextTail === this.head) {
+      this.metrics.dropped++;
+      return false;
+    }
+
+    this.ring[this.tail] = { fn, context, ts: performance.now() };
+    this.tail = nextTail;
+
+    if (!this.scheduled) {
+      this.scheduled = true;
+      queueMicrotask(() => this.drain());
+    }
+    return true;
+  }
+
+  drain() {
+    let processed = 0;
+    const batchLimit = 128;
+
+    while (this.head !== this.tail && processed < batchLimit) {
+      const item = this.ring[this.head];
+      this.ring[this.head] = undefined;
+      this.head = (this.head + 1) % this.capacity;
+
+      try {
+        item.fn(item.context);
+        this.metrics.executed++;
+      } catch (error) {
+        console.error('Task processing error:', error);
+      }
+      processed++;
+    }
+
+    if (this.head !== this.tail) {
+      queueMicrotask(() => this.drain());
+    } else {
+      this.scheduled = false;
+    }
+  }
+
+  get pendingCount() {
+    return (this.tail - this.head + this.capacity) % this.capacity;
   }
 }
 
-module.exports = { hydrate, batchProcessor };
+module.exports = { TaskDispatcher };
