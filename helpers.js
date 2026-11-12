@@ -1,86 +1,45 @@
-/**
- * Dynamic operation chaining helper for automation workflows.
- * Employs a Proxy-backed pipeline builder for expressive task composition.
- */
-
-class PipelineHelper {
-  constructor(initialValue = null) {
-    this._value = initialValue;
-    this._steps = [];
-  }
-
-  static of(value) {
-    return new PipelineHelper(value);
-  }
-
-  tap(fn) {
-    this._steps.push(async (val) => {
-      await fn(val);
-      return val;
-    });
-    return this;
-  }
-
-  map(fn) {
-    this._steps.push(async (val) => fn(val));
-    return this;
-  }
-
-  delay(ms) {
-    this._steps.push(async (val) => {
-      await new Promise((resolve) => setTimeout(resolve, ms));
-      return val;
-    });
-    return this;
-  }
-
-  retry(fn, maxAttempts = 3, delayMs = 100) {
-    this._steps.push(async (val) => {
-      let lastErr;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          return await fn(val, attempt);
-        } catch (err) {
-          lastErr = err;
-          if (attempt < maxAttempts) {
-            await new Promise((r) => setTimeout(r, delayMs * attempt));
+export const createPipeline = (initialValue) => {
+  const steps = [];
+  const proxy = new Proxy({}, {
+    get(_, prop) {
+      if (prop === 'execute') {
+        return async () => {
+          let current = initialValue;
+          for (const step of steps) {
+            current = await step(current);
           }
-        }
+          return current;
+        };
       }
-      throw lastErr;
-    });
-    return this;
-  }
-
-  async run(input = this._value) {
-    let current = input;
-    for (let i = 0; i < this._steps.length; i++) {
-      current = await this._steps[i](current);
+      if (prop === 'tap') {
+        return (fn) => {
+          steps.push(async (val) => { await fn(val); return val; });
+          return proxy;
+        };
+      }
+      return (fn) => {
+        steps.push(async (val) => typeof fn === 'function' ? fn(val, prop) : val?.[prop]?.());
+        return proxy;
+      };
     }
-    return current;
+  });
+  return proxy;
+};
+
+export async function* retrySequence(maxAttempts = 3, baseDelay = 100) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const jitter = Math.floor(Math.random() * 50);
+    const delay = Math.pow(2, attempt - 1) * baseDelay + jitter;
+    yield { attempt, delay };
+    if (attempt < maxAttempts) {
+      await new Promise((res) => setTimeout(res, delay));
+    }
   }
 }
 
-const createAutoHelper = (operations = {}) => {
-  return new Proxy(operations, {
-    get(target, prop) {
-      if (prop in target) return target[prop];
-      return (data) => (data && typeof data === 'object' ? data[prop] : undefined);
-    }
-  });
+export const deepExtract = (obj, pathString, fallback = null) => {
+  return pathString
+    .split(/[\.\[\]]/)
+    .filter(Boolean)
+    .reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : fallback), obj);
 };
-
-const helpers = createAutoHelper({
-  pipe: (initial) => PipelineHelper.of(initial),
-  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-  clamp: (val, min, max) => Math.min(Math.max(val, min), max),
-  safeParseJSON: (str, fallback = null) => {
-    try {
-      return JSON.parse(str);
-    } catch {
-      return fallback;
-    }
-  }
-});
-
-module.exports = { PipelineHelper, helpers };
