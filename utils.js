@@ -1,12 +1,3 @@
-const transform = (input, schema) => {
-  const result = {};
-  for (const [key, path] of Object.entries(schema)) {
-    const value = String(path).split('.').reduce((acc, part) => acc && acc[part], input);
-    result[key] = value ?? null;
-  }
-  return result;
-};
-
 const memoize = (fn) => {
   const cache = new Map();
   return (...args) => {
@@ -18,21 +9,27 @@ const memoize = (fn) => {
   };
 };
 
-const pipeline = (...fns) => (initialValue) => fns.reduce((val, fn) => fn(val), initialValue);
+const pipeline = (...fns) => (initialValue) => 
+  fns.reduce((acc, fn) => fn(acc), initialValue);
 
-const deepFreeze = (obj) => {
-  Object.keys(obj).forEach((prop) => {
-    if (typeof obj[prop] === 'object' && obj[prop] !== null) deepFreeze(obj[prop]);
-  });
-  return Object.freeze(obj);
-};
-
-const debounced = (fn, delay) => {
-  let timeout;
+const throttle = (fn, wait) => {
+  let lastCall = 0;
   return (...args) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), delay);
+    const now = Date.now();
+    if (now - lastCall >= wait) {
+      lastCall = now;
+      return fn(...args);
+    }
   };
 };
 
-module.exports = { transform, memoize, pipeline, deepFreeze, debounced };
+const flattenDeep = (arr) => 
+  arr.reduce((acc, val) => 
+    Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
+
+const sanitize = (obj) => 
+  Object.fromEntries(
+    Object.entries(obj).filter(([_, v]) => v !== null && v !== undefined)
+  );
+
+export { memoize, pipeline, throttle, flattenDeep, sanitize };
