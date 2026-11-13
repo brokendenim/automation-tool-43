@@ -1,25 +1,28 @@
 const fs = require('fs');
 const path = require('path');
 
-const safeLog = (data, context = 'default') => {
-  const timestamp = new Date().toISOString();
-  const entry = { timestamp, context, data };
+const LOG_DIR = path.join(__dirname, 'logs');
+const MAX_SIZE = 1024 * 1024;
 
-  try {
-    if (typeof data === 'undefined') throw new Error('Data undefined');
-    const serialized = JSON.stringify(entry) + '\n';
-    fs.appendFileSync(path.join(__dirname, 'log.txt'), serialized);
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      fs.writeFileSync(path.join(__dirname, 'log.txt'), '--- INIT LOG ---\n');
-      safeLog(data, context);
-    } else {
-      const fallback = `[CRITICAL_FAILURE] ${context}: ${err.message}`;
-      process.stderr.write(fallback + '\n');
-      const emergencyPath = path.join(__dirname, 'emergency.log');
-      fs.appendFileSync(emergencyPath, fallback + '\n');
-    }
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
+
+const rotate = (filePath) => {
+  const stats = fs.statSync(filePath);
+  if (stats.size > MAX_SIZE) {
+    const timestamp = Date.now();
+    fs.renameSync(filePath, `${filePath}.${timestamp}.old`);
   }
 };
 
-module.exports = { safeLog };
+const logger = (message, level = 'INFO') => {
+  const logPath = path.join(LOG_DIR, 'app.log');
+  if (fs.existsSync(logPath)) rotate(logPath);
+
+  const entry = `[${new Date().toISOString()}] [${level}] ${message}\n`;
+  fs.appendFileSync(logPath, entry);
+};
+
+module.exports = {
+  info: (msg) => logger(msg, 'INFO'),
+  error: (msg) => logger(msg, 'ERROR')
+};
