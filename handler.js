@@ -1,32 +1,24 @@
-const validate = (data) => {
-  const schema = { id: 'number', task: 'string' };
-  return Object.keys(schema).every(key => typeof data[key] === schema[key]);
+const registry = new Map();
+
+const execute = (task) => {
+  const key = task.type || 'default';
+  const handler = registry.get(key) || registry.get('fallback');
+  return handler ? handler(task.payload) : null;
 };
 
-const processQueue = (queue) => {
-  console.log('Initiating cycle');
-  const results = [];
+const register = (type, fn) => registry.set(type, fn);
+
+const bootstrapper = (config = {}) => {
+  const defaults = { log: true, retries: 3 };
+  const settings = { ...defaults, ...config };
   
-  for (let i = 0; i < queue.length; i++) {
-    const entry = queue[i];
-    
-    try {
-      if (!validate(entry)) {
-        throw new Error(`invalid payload at index ${i}`);
-      }
-      
-      const output = { ...entry, processed: true, timestamp: Date.now() };
-      results.push(output);
-      console.log(`success: ${entry.id}`);
-    } catch (err) {
-      console.error(`skipped index ${i}: ${err.message}`);
-    }
-  }
-  return results;
+  register('init', () => console.log('system initialized'));
+  register('fallback', (p) => ({ status: 'unhandled', data: p }));
+
+  return {
+    process: (tasks) => tasks.map(execute),
+    config: Object.freeze(settings)
+  };
 };
 
-const automationTool43 = {
-  run: (payloads) => processQueue(payloads)
-};
-
-module.exports = automationTool43;
+export { bootstrapper, register };
