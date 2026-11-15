@@ -1,67 +1,54 @@
-const RuleSymbol = Symbol('ruleContract');
-
-export function createLoopValidator(schema) {
-  return {
-    [RuleSymbol]: schema,
-    validate(payload) {
-      const errors = [];
-      if (!payload || typeof payload !== 'object') {
-        return { valid: false, errors: ['Payload must be a non-null object'], sanitized: null };
-      }
-      for (const [key, rule] of Object.entries(schema)) {
-        const value = payload[key];
-        if (typeof rule === 'function') {
-          if (!rule(value, payload)) {
-            errors.push(`Field '${key}' failed custom rule check (value: ${JSON.stringify(value)})`);
-          }
-        } else if (typeof rule === 'string') {
-          if (typeof value !== rule) {
-            errors.push(`Field '${key}' expected type '${rule}', got '${typeof value}'`);
-          }
-        }
-      }
-      return {
-        valid: errors.length === 0,
-        errors,
-        sanitized: errors.length === 0 ? Object.freeze({ ...payload }) : null
-      };
-    }
-  };
+/**
+ * Resilient async call wrapper using Async Generator for stateful retry delays
+ */
+async function* retrySchedule(maxRetries = 3, baseDelayMs = 200, factor = 2) {
+  let delay = baseDelayMs;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    yield { attempt, delay };
+    const jitter = Math.random() * 0.3 * delay;
+    delay = Math.round(delay * factor + jitter);
+  }
 }
 
-export function* processLoopWithValidation(items, validator, processor) {
-  for (let idx = 0; idx < items.length; idx++) {
-    const rawItem = items[idx];
-    const check = validator.validate(rawItem);
+export async function executeWithRetry(asyncOp, options = {}) {
+  const {
+    maxRetries = 4,
+    initialDelay = 150,
+    backoffFactor = 1.8,
+    onRetry = null,
+    shouldRetry = () => true
+  } = options;
 
-    if (!check.valid) {
-      yield {
-        status: 'rejected',
-        index: idx,
-        errors: check.errors,
-        item: rawItem
-      };
-      continue;
-    }
+  let lastError;
+  const schedule = retrySchedule(maxRetries, initialDelay, backoffFactor);
 
+  for await (const { attempt, delay } of schedule) {
     try {
-      const result = processor(check.sanitized, idx);
-      yield { status: 'fulfilled', index: idx, result };
+      return await asyncOp(attempt);
     } catch (err) {
-      yield { status: 'failed', index: idx, error: err.message };
+      lastError = err;
+      if (attempt === maxRetries || !shouldRetry(err)) {
+        break;
+      }
+      if (typeof onRetry === 'function') {
+        onRetry(err, attempt, delay);
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
+
+  throw new Error(`Operation failed after ${maxRetries} attempts: ${lastError?.message || lastError}`);
 }
 
-export function runValidationPipeline(items, schemaRules, itemHandler) {
-  const validator = createLoopValidator(schemaRules);
-  const iterator = processLoopWithValidation(items, validator, itemHandler);
-  const summary = { fulfilled: 0, rejected: 0, failed: 0, items: [] };
+export function createRetryProxy(targetObj) {
+  return new Proxy(targetObj, {
+    get(target, prop) {
+      const original = target[prop];
+      if (typeof original !== 'function') return original;
 
-  for (const step of iterator) {
-    summary[step.status]++;
-    summary.items.push(step);
-  }
-
-  return summary;
+      return function (...args) {
+        return executeWithRetry(() => original.apply(target, args));
+      };
+    }
+  });
 }
