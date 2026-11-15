@@ -1,35 +1,35 @@
+const fs = require('fs');
+const path = require('path');
+
+const collect = (dir, ext = '.js') => {
+  return fs.readdirSync(dir).reduce((acc, file) => {
+    const full = path.join(dir, file);
+    if (fs.statSync(full).isDirectory()) {
+      return acc.concat(collect(full, ext));
+    }
+    return file.endsWith(ext) ? [...acc, full] : acc;
+  }, []);
+};
+
+const orchestrate = (tasks) => {
+  const results = { success: [], errors: [] };
+  return tasks.reduce((promise, task) => 
+    promise.then(() => task())
+      .then(res => ({ ...results, success: [...results.success, res] }))
+      .catch(err => ({ ...results, errors: [...results.errors, err.message] })),
+    Promise.resolve(results)
+  );
+};
+
 const memoize = (fn) => {
   const cache = new Map();
   return (...args) => {
     const key = JSON.stringify(args);
-    if (cache.has(key)) return cache.get(key);
-    const result = fn(...args);
-    cache.set(key, result);
-    return result;
-  };
-};
-
-const pipeline = (...fns) => (initialValue) => 
-  fns.reduce((acc, fn) => fn(acc), initialValue);
-
-const throttle = (fn, wait) => {
-  let lastCall = 0;
-  return (...args) => {
-    const now = Date.now();
-    if (now - lastCall >= wait) {
-      lastCall = now;
-      return fn(...args);
+    if (!cache.has(key)) {
+      cache.set(key, fn(...args));
     }
+    return cache.get(key);
   };
 };
 
-const flattenDeep = (arr) => 
-  arr.reduce((acc, val) => 
-    Array.isArray(val) ? acc.concat(flattenDeep(val)) : acc.concat(val), []);
-
-const sanitize = (obj) => 
-  Object.fromEntries(
-    Object.entries(obj).filter(([_, v]) => v !== null && v !== undefined)
-  );
-
-export { memoize, pipeline, throttle, flattenDeep, sanitize };
+module.exports = { collect, orchestrate, memoize };
