@@ -1,26 +1,33 @@
-const colors = { reset: '\x1b[0m', red: '\x1b[31m', cyan: '\x1b[36m', yellow: '\x1b[33m' };
-
-const stamp = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
-
-const format = (lvl, msg) => `${colors[lvl] || ''}[${stamp()}][${lvl.toUpperCase()}] ${msg}${colors.reset}`;
+const memoizedLogs = new Map();
+const MAX_CACHE = 1000;
 
 const logger = {
-  info: (m) => console.log(format('cyan', m)),
-  warn: (m) => console.warn(format('yellow', m)),
-  error: (m) => console.error(format('red', m)),
-  dump: (data) => {
-    try {
-      console.log(JSON.stringify(data, null, 2));
-    } catch (e) {
-      console.error('serialization failure for dump');
+  log: (msg, level = 'info') => {
+    const timestamp = Date.now();
+    const entry = `[${level.toUpperCase()}] ${timestamp}: ${msg}`;
+    
+    if (memoizedLogs.size > MAX_CACHE) {
+      const firstKey = memoizedLogs.keys().next().value;
+      memoizedLogs.delete(firstKey);
     }
+    
+    memoizedLogs.set(timestamp, entry);
+    process.stdout.write(entry + '\n');
   },
-  trace: (fn) => (...args) => {
-    const start = performance.now();
-    const res = fn(...args);
-    const end = performance.now();
-    console.log(`execution timing for ${fn.name}: ${(end - start).toFixed(4)}ms`);
-    return res;
+  
+  flush: () => {
+    const snapshot = Array.from(memoizedLogs.values());
+    memoizedLogs.clear();
+    return snapshot;
+  },
+
+  performanceBatch: (logs) => {
+    return logs.reduce((acc, curr) => {
+      const [level] = curr.split(']');
+      if (!acc[level]) acc[level] = 0;
+      acc[level]++;
+      return acc;
+    }, {});
   }
 };
 
