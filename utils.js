@@ -1,35 +1,28 @@
-const fs = require('fs');
-const path = require('path');
-
-const collect = (dir, ext = '.js') => {
-  return fs.readdirSync(dir).reduce((acc, file) => {
-    const full = path.join(dir, file);
-    if (fs.statSync(full).isDirectory()) {
-      return acc.concat(collect(full, ext));
+const retry = async (fn, attempts = 3, delay = 1000) => {
+  let lastError;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < attempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+      }
     }
-    return file.endsWith(ext) ? [...acc, full] : acc;
-  }, []);
+  }
+  throw lastError;
 };
 
-const orchestrate = (tasks) => {
-  const results = { success: [], errors: [] };
-  return tasks.reduce((promise, task) => 
-    promise.then(() => task())
-      .then(res => ({ ...results, success: [...results.success, res] }))
-      .catch(err => ({ ...results, errors: [...results.errors, err.message] })),
-    Promise.resolve(results)
+const withTimeout = (promise, ms) => {
+  const timeout = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Operation timed out')), ms)
   );
+  return Promise.race([promise, timeout]);
 };
 
-const memoize = (fn) => {
-  const cache = new Map();
-  return (...args) => {
-    const key = JSON.stringify(args);
-    if (!cache.has(key)) {
-      cache.set(key, fn(...args));
-    }
-    return cache.get(key);
-  };
+const networkExecutor = async (operation, options = {}) => {
+  const { retries = 3, timeout = 5000 } = options;
+  return retry(() => withTimeout(operation(), timeout), retries);
 };
 
-module.exports = { collect, orchestrate, memoize };
+module.exports = { networkExecutor };
