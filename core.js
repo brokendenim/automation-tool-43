@@ -1,58 +1,31 @@
-class TaskDispatcher {
-  constructor(capacity = 1024) {
-    this.capacity = capacity;
-    this.ring = new Array(capacity);
-    this.head = 0;
-    this.tail = 0;
-    this.scheduled = false;
-    this.metrics = { executed: 0, dropped: 0 };
-  }
+const validator = (input) => {
+  const rules = [
+    (x) => typeof x === 'object' && x !== null,
+    (x) => 'task' in x && typeof x.task === 'string',
+    (x) => Number.isInteger(x.priority) && x.priority > 0
+  ];
+  return rules.every((rule) => rule(input));
+};
 
-  enqueue(fn, context = null) {
-    const nextTail = (this.tail + 1) % this.capacity;
-    if (nextTail === this.head) {
-      this.metrics.dropped++;
-      return false;
-    }
-
-    this.ring[this.tail] = { fn, context, ts: performance.now() };
-    this.tail = nextTail;
-
-    if (!this.scheduled) {
-      this.scheduled = true;
-      queueMicrotask(() => this.drain());
-    }
-    return true;
-  }
-
-  drain() {
-    let processed = 0;
-    const batchLimit = 128;
-
-    while (this.head !== this.tail && processed < batchLimit) {
-      const item = this.ring[this.head];
-      this.ring[this.head] = undefined;
-      this.head = (this.head + 1) % this.capacity;
-
-      try {
-        item.fn(item.context);
-        this.metrics.executed++;
-      } catch (error) {
-        console.error('Task processing error:', error);
+async function processQueue(items) {
+  const results = [];
+  for (const item of items) {
+    try {
+      if (!validator(item)) {
+        console.error('Invalid payload schema detected:', item);
+        continue;
       }
-      processed++;
-    }
-
-    if (this.head !== this.tail) {
-      queueMicrotask(() => this.drain());
-    } else {
-      this.scheduled = false;
+      const result = await performTask(item);
+      results.push({ status: 'success', data: result });
+    } catch (err) {
+      results.push({ status: 'error', reason: err.message });
     }
   }
-
-  get pendingCount() {
-    return (this.tail - this.head + this.capacity) % this.capacity;
-  }
+  return results;
 }
 
-module.exports = { TaskDispatcher };
+async function performTask(item) {
+  return new Promise((resolve) => setTimeout(() => resolve(`Task ${item.task} done`), 10));
+}
+
+export { processQueue };
