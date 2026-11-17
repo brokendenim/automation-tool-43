@@ -1,34 +1,34 @@
-const memoizedLogs = new Map();
-const MAX_CACHE = 1000;
+const fs = require('fs');
+const path = require('path');
 
-const logger = {
-  log: (msg, level = 'info') => {
-    const timestamp = Date.now();
-    const entry = `[${level.toUpperCase()}] ${timestamp}: ${msg}`;
-    
-    if (memoizedLogs.size > MAX_CACHE) {
-      const firstKey = memoizedLogs.keys().next().value;
-      memoizedLogs.delete(firstKey);
+const logPath = path.join(__dirname, 'automation-tool-43.log');
+
+function log(data, severity = 'info') {
+  try {
+    if (typeof data === 'undefined' || data === null) {
+      throw new Error('Empty payload');
     }
-    
-    memoizedLogs.set(timestamp, entry);
-    process.stdout.write(entry + '\n');
-  },
-  
-  flush: () => {
-    const snapshot = Array.from(memoizedLogs.values());
-    memoizedLogs.clear();
-    return snapshot;
-  },
+    const entry = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      severity,
+      payload: data,
+      pid: process.pid
+    }) + '\n';
 
-  performanceBatch: (logs) => {
-    return logs.reduce((acc, curr) => {
-      const [level] = curr.split(']');
-      if (!acc[level]) acc[level] = 0;
-      acc[level]++;
-      return acc;
-    }, {});
+    fs.appendFileSync(logPath, entry);
+  } catch (err) {
+    const fallback = `[CRITICAL_FALLBACK] ${severity}: ${err.message}`;
+    process.stderr.write(fallback + '\n');
+    try {
+      fs.appendFileSync(logPath, JSON.stringify({ error: 'self-recovery', details: fallback }) + '\n');
+    } catch (fsErr) {
+      process.stdout.write('system panic: log file inaccessible\n');
+    }
   }
-};
+}
 
-module.exports = logger;
+module.exports = {
+  info: (d) => log(d, 'info'),
+  warn: (d) => log(d, 'warn'),
+  error: (d) => log(d, 'error')
+};
