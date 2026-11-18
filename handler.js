@@ -1,24 +1,19 @@
 const registry = new Map();
-
-const execute = (task) => {
-  const key = task.type || 'default';
-  const handler = registry.get(key) || registry.get('fallback');
-  return handler ? handler(task.payload) : null;
+const execute = async (task, payload) => {
+  const handler = registry.get(task);
+  if (!handler) throw new Error(`unregistered task: ${task}`);
+  return await handler(payload);
 };
-
-const register = (type, fn) => registry.set(type, fn);
-
-const bootstrapper = (config = {}) => {
-  const defaults = { log: true, retries: 3 };
-  const settings = { ...defaults, ...config };
-  
-  register('init', () => console.log('system initialized'));
-  register('fallback', (p) => ({ status: 'unhandled', data: p }));
-
-  return {
-    process: (tasks) => tasks.map(execute),
-    config: Object.freeze(settings)
-  };
+const register = (task, logic) => registry.set(task, logic);
+const runSequence = async (tasks, context) => {
+  let state = context;
+  for (const [task, args] of Object.entries(tasks)) {
+    state = await execute(task, { ...state, ...args });
+  }
+  return state;
 };
-
-export { bootstrapper, register };
+const bootstrap = (initialModules) => {
+  Object.entries(initialModules).forEach(([k, v]) => register(k, v));
+  return { execute, register, runSequence };
+};
+module.exports = bootstrap;
