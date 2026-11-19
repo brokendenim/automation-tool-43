@@ -1,38 +1,29 @@
-const validateSchema = (data, schema) => {
+const validate = (schema) => (data) => {
   const keys = Object.keys(schema);
-  return keys.every(key => {
+  return keys.reduce((acc, key) => {
     const validator = schema[key];
-    const value = data[key];
-    return typeof value === validator || (validator instanceof RegExp && validator.test(value));
-  });
+    const isValid = validator(data[key]);
+    if (!isValid) throw new Error(`invalid field: ${key}`);
+    return { ...acc, [key]: data[key] };
+  }, {});
 };
 
-const schema = {
-  id: 'number',
-  payload: /^[a-z0-9]+$/i,
-  status: 'string'
+const rules = {
+  task: (v) => typeof v === 'string' && v.length > 0,
+  priority: (v) => [0, 1, 2].includes(v),
+  retries: (v) => Number.isInteger(v) && v >= 0
 };
 
-async function processQueue(items) {
-  for (const item of items) {
+const runProcess = async (queue) => {
+  const sanitizer = validate(rules);
+  for (const item of queue) {
     try {
-      if (!validateSchema(item, schema)) {
-        throw new Error(`Invalid schema for item: ${item.id}`);
-      }
-      
-      console.log(`Processing: ${item.payload}`);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      const sanitized = sanitizer(item);
+      console.log('executing task:', sanitized.task);
     } catch (err) {
-      console.error(`Skipping batch due to: ${err.message}`);
-      continue;
+      console.error('skipped item due to validation failure');
     }
   }
-}
+};
 
-const dataPool = [
-  { id: 1, payload: 'abc123', status: 'ready' },
-  { id: 2, payload: '!!!', status: 'error' },
-  { id: 3, payload: 'xyz789', status: 'ready' }
-];
-
-processQueue(dataPool);
+export { runProcess };
