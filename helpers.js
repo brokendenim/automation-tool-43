@@ -1,36 +1,27 @@
-const safeExecute = (fn, fallback = null) => {
-  return (...args) => {
+const retry = async (fn, retries = 3, delay = 1000) => {
+  for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      const result = fn(...args);
-      return result instanceof Promise ? result.catch(() => fallback) : result;
-    } catch (e) {
-      console.error(`[automation-tool-43] execution failure: ${e.message}`);
-      return typeof fallback === 'function' ? fallback(e) : fallback;
+      return await fn();
+    } catch (err) {
+      if (attempt === retries - 1) throw err;
+      await new Promise(resolve => setTimeout(resolve, delay * (attempt + 1)));
     }
-  };
-};
-
-const gracefulParse = (data, schema = {}) => {
-  try {
-    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-    return Object.keys(schema).reduce((acc, key) => ({
-      ...acc, 
-      [key]: parsed[key] !== undefined ? parsed[key] : schema[key]
-    }), {});
-  } catch (err) {
-    return schema;
   }
 };
 
-const retryAttempt = async (task, retries = 3, delay = 100) => {
-  for (let i = 0; i < retries; i++) {
+const withExponentialBackoff = async (task, max = 5) => {
+  let count = 0;
+  const execute = async () => {
     try {
       return await task();
-    } catch (e) {
-      if (i === retries - 1) throw e;
-      await new Promise(r => setTimeout(r, delay * Math.pow(2, i)));
+    } catch (error) {
+      if (++count > max) throw error;
+      const jitter = Math.random() * 200;
+      await new Promise(r => setTimeout(r, Math.pow(2, count) * 100 + jitter));
+      return execute();
     }
-  }
+  };
+  return execute();
 };
 
-module.exports = { safeExecute, gracefulParse, retryAttempt };
+module.exports = { retry, withExponentialBackoff };
