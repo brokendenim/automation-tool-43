@@ -10,14 +10,14 @@ const deepMerge = (target, source) => {
   return { ...target, ...source };
 };
 
-const loadConfig = (userPath, defaults) => {
+const loadConfig = (defaults, configPath) => {
   try {
-    const fullPath = path.resolve(process.cwd(), userPath);
+    const fullPath = path.resolve(process.cwd(), configPath);
     if (!fs.existsSync(fullPath)) return defaults;
-    const userConfig = require(fullPath);
-    return deepMerge(defaults, userConfig);
+    
+    const fileData = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+    return deepMerge(defaults, fileData);
   } catch (err) {
-    console.error('Config load failure, falling back to defaults');
     return defaults;
   }
 };
