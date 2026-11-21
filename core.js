@@ -1,29 +1,31 @@
-const validate = (schema) => (data) => {
-  const keys = Object.keys(schema);
-  return keys.reduce((acc, key) => {
-    const validator = schema[key];
-    const isValid = validator(data[key]);
-    if (!isValid) throw new Error(`invalid field: ${key}`);
-    return { ...acc, [key]: data[key] };
-  }, {});
+const memoize = (fn) => {
+  const cache = new Map();
+  return (...args) => {
+    const key = JSON.stringify(args);
+    if (cache.has(key)) return cache.get(key);
+    const result = fn(...args);
+    cache.set(key, result);
+    return result;
+  };
 };
 
-const rules = {
-  task: (v) => typeof v === 'string' && v.length > 0,
-  priority: (v) => [0, 1, 2].includes(v),
-  retries: (v) => Number.isInteger(v) && v >= 0
+const heavyComputation = (data) => {
+  return data.reduce((acc, val) => acc + Math.sqrt(val * Math.random()), 0);
 };
 
-const runProcess = async (queue) => {
-  const sanitizer = validate(rules);
-  for (const item of queue) {
-    try {
-      const sanitized = sanitizer(item);
-      console.log('executing task:', sanitized.task);
-    } catch (err) {
-      console.error('skipped item due to validation failure');
-    }
+const optimizedProcess = memoize(heavyComputation);
+
+const batchProcess = (items) => {
+  const queue = [...items];
+  const results = [];
+  
+  while (queue.length > 0) {
+    const chunk = queue.splice(0, 100);
+    const processed = chunk.map(optimizedProcess);
+    results.push(...processed);
   }
+  
+  return results;
 };
 
-export { runProcess };
+module.exports = { batchProcess, memoize };
